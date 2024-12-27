@@ -1,3 +1,6 @@
+python-venv/
+buildings_with_base.stl
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -8,6 +11,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
+cache/
 build/
 develop-eggs/
 dist/
