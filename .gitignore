@@ -1,4 +1,5 @@
 python-venv/
+export/
 buildings_with_base.stl
 
 # Byte-compiled / optimized / DLL files
