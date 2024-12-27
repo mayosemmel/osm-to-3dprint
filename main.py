@@ -101,11 +101,17 @@ def scale_coordinates(gdf, bbox, target_size=180, max_height_mm=40, default_heig
                 x = ((coord[0] - south_lng) * scale_x) + center_offset_x
                 if x > base_size:
                     x = base_size
+                if x < 0:
+                    x = 0
                 y = ((coord[1] - south_lat) * scale_y) + center_offset_y
                 if y > base_size:
                     y = base_size
+                if y < 0:
+                    y = 0
+                if y < 0 or x < 0:
+                    print(f"X: {x} Y: {y}")
                 height = get_building_height(row, default_height) * height_scale
-                print(f"Building at index {idx} with coordinates {exterior_coords} has height {height}")
+                #print(f"Building at index {idx} with coordinates {exterior_coords} has height {height}")
 
                 v_bottom = (x, y, base_thickness)
                 v_top = (x, y, height + base_thickness)
