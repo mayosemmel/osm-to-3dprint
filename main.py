@@ -8,7 +8,10 @@ def fetch_building_data(bbox):
     #north_lat, north_lng, south_lat, south_lng = bbox
 
     # Fetch building footprints within the bounding box
-    gdf = ox.features_from_bbox( bbox , tags = {'building': True})
+    #gdf = ox.features_from_bbox( bbox , tags = {'building': True})
+    gdf = ox.features_from_bbox( bbox , tags = {'natural': ['water']})
+    #{‘amenity’:True, ‘landuse’:[‘retail’,’commercial’]
+    
     return gdf
 
 def get_building_height(row, default_height=10):
@@ -96,7 +99,11 @@ def scale_coordinates(gdf, bbox, target_size=180, max_height_mm=40, default_heig
             # Create vertices for the building
             for coord in exterior_coords:
                 x = ((coord[0] - south_lng) * scale_x) + center_offset_x
+                if x > base_size:
+                    x = base_size
                 y = ((coord[1] - south_lat) * scale_y) + center_offset_y
+                if y > base_size:
+                    y = base_size
                 height = get_building_height(row, default_height) * height_scale
                 print(f"Building at index {idx} with coordinates {exterior_coords} has height {height}")
 
@@ -146,15 +153,11 @@ def save_to_stl(vertices, faces, filename):
     mesh_data.save(filename)
 
 def main():
-    #bbox = (37.8049, -122.3894, 37.7749, -122.4194)  # (north_lat, north_lng, south_lat, south_lng) #san francisco example
-    #bbox = (-122.4194, 37.7749, -122.3894, 37.8049)
-    #bbox = (33.767759, -84.381932, 33.753296, -84.402845) #atlanta example
-    #bbox = (left down lat 49.276040, long 10.863577, right up lat 49.276040, long 10.863577) #Suddersdorf
-    #bbox = (10.858612, 49.274623, 10.867345, 49.279383)
-    bbox = (-122.4194, 37.7749, -122.3894, 37.8049) #Bounding box as (left, bottom, right, top).
+    bbox = (4.87123, 52.35893, 4.93389, 52.38351)  #Amsterdam
+    #bbox = (-122.4194, 37.7749, -122.3894, 37.8049) #Suddersdorf
     #bbox = min Longitude , min Latitude , max Longitude , max Latitude 
     gdf = fetch_building_data(bbox)
-    vertices, faces = scale_coordinates(gdf, bbox, target_size=180, max_height_mm=40, default_height=40, base_thickness=2)
+    vertices, faces = scale_coordinates(gdf, bbox, target_size=180, max_height_mm=1, default_height=40, base_thickness=2)
     save_to_stl(vertices, faces, 'buildings_with_base.stl')
 
 if __name__ == "__main__":
