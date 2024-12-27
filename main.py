@@ -5,10 +5,10 @@ from stl import mesh
 
 def fetch_building_data(bbox):
     # Unpack the bounding box
-    north_lat, north_lng, south_lat, south_lng = bbox
+    #north_lat, north_lng, south_lat, south_lng = bbox
 
     # Fetch building footprints within the bounding box
-    gdf = ox.geometries_from_bbox(north_lat, south_lat, north_lng, south_lng, tags={'building': True})
+    gdf = ox.features_from_bbox( bbox , tags = {'building': True})
     return gdf
 
 def get_building_height(row, default_height=10):
@@ -56,7 +56,9 @@ def create_solid_base(base_size, base_thickness=2):
 
 def scale_coordinates(gdf, bbox, target_size=180, max_height_mm=40, default_height=10, base_thickness=2):
     # Unpack the bounding box
-    north_lat, north_lng, south_lat, south_lng = bbox
+    #north_lat, north_lng, south_lat, south_lng = bbox
+    south_lng, south_lat, north_lng, north_lat = bbox
+
 
     # Calculate the scale factors for x and y dimensions
     lat_range = north_lat - south_lat
@@ -132,11 +134,25 @@ def save_to_stl(vertices, faces, filename):
     for i, face in enumerate(faces):
         for j in range(3):
             mesh_data.vectors[i][j] = vertices[face[j], :]
+
+    # Create a new plot
+    #figure = pyplot.figure()
+    #axes = figure.add_subplot(projection='3d')
+    #axes.add_collection3d(mplot3d.art3d.Poly3DCollection(mesh_data.vectors))
+    #scale = mesh_data.points.flatten()
+    #axes.auto_scale_xyz(scale, scale, scale)
+    #pyplot.show()
+
     mesh_data.save(filename)
 
 def main():
     #bbox = (37.8049, -122.3894, 37.7749, -122.4194)  # (north_lat, north_lng, south_lat, south_lng) #san francisco example
-    bbox = (33.767759, -84.381932, 33.753296, -84.402845) #atlanta example
+    #bbox = (-122.4194, 37.7749, -122.3894, 37.8049)
+    #bbox = (33.767759, -84.381932, 33.753296, -84.402845) #atlanta example
+    #bbox = (left down lat 49.276040, long 10.863577, right up lat 49.276040, long 10.863577) #Suddersdorf
+    #bbox = (10.858612, 49.274623, 10.867345, 49.279383)
+    bbox = (-122.4194, 37.7749, -122.3894, 37.8049) #Bounding box as (left, bottom, right, top).
+    #bbox = min Longitude , min Latitude , max Longitude , max Latitude 
     gdf = fetch_building_data(bbox)
     vertices, faces = scale_coordinates(gdf, bbox, target_size=180, max_height_mm=40, default_height=40, base_thickness=2)
     save_to_stl(vertices, faces, 'buildings_with_base.stl')
