@@ -1,9 +1,13 @@
 import osmnx as ox
 import shapely
 import numpy as np
+import subprocess
+import os
+import math
 from stl import mesh
-#from mpl_toolkits import mplot3d
-#from matplotlib import pyplot
+from mpl_toolkits import mplot3d
+from matplotlib import pyplot
+#C++ Tool from https://github.com/RikilG/Geometry-Algorithms/tree/master/Triangulation with this version https://github.com/RikilG/Geometry-Algorithms/commit/7bdf25e425b93dc6955331a48980a4b4d8051a6d
 
 def fetch_location_data(bbox, location_type):
     # Fetch building footprints within the bounding box
@@ -12,7 +16,9 @@ def fetch_location_data(bbox, location_type):
     if location_type == "paths":
         gdf = ox.features_from_bbox( bbox , tags = {'highway': True})
     if location_type == "water":
-        gdf = ox.features_from_bbox( bbox , tags = {'natural': ['water']})
+        gdf = ox.features_from_bbox( bbox , tags = {'natural': ['water','reef'],'landuse': ['basin','salt_pond'],'leisure': ['swimming_pool']})
+    if location_type == "green":
+        gdf = ox.features_from_bbox( bbox , tags = {'landuse': ['forest','meadow','grass','allotments','flowerbed','orchard','plant_nursery','vineyard','cemetery','recreation_ground','village_green'],'leisure': ['garden','park','pitch'],'natural': ['grassland','scrub','wood']})
     return gdf
 
 def get_building_height(row, default_height=10):
@@ -58,7 +64,76 @@ def create_solid_base(base_size, base_thickness=2):
 
     return base_vertices, base_faces
 
-def scale_coordinates(gdf, bbox, target_size=180, max_height_mm=40, default_height=10, base_thickness=2, base_generation=True, building_generation=True):
+def check_if_overlapping_or_empty(geometry1, geometry2):
+    if isinstance(geometry1, shapely.geometry.Polygon) and isinstance(geometry2, shapely.geometry.Polygon):
+        difference = shapely.difference(geometry1, geometry2)
+    else:
+        return True
+    if isinstance(difference, shapely.geometry.Polygon):
+        if difference.area != 0:
+            return True
+        else:
+            return False
+    else:
+        print(f"Error, Shapes invalid")
+
+def create_triangle(vertices,side1,side2,side3):
+    triangle_coords = ((vertices[side1][0],vertices[side1][1]),(vertices[side2][0],vertices[side2][1]),(vertices[side3][0],vertices[side3][1]))
+    return shapely.Polygon(triangle_coords)
+
+def create_planar_face(face_indicies, vertices, geometry_scaled):
+    faces = []
+    triangles_xy = []
+
+    polygon_input = str(len(face_indicies))
+    polygon_coords = []
+    for i in range(len(face_indicies)):
+        polygon_input += os.linesep + str(int(vertices[face_indicies[i]][0]*1000000000)) + " " + str(int(vertices[face_indicies[i]][1]*1000000000))
+    cwd = os.path.dirname(os.path.realpath(__file__))
+    polygon_input_file = open("cache/polygon_input.txt", "w")
+    polygon_input_file.write(polygon_input)
+    polygon_input_file.close()
+    output = subprocess.check_output(["./a.out", "cache/polygon_input.txt"], cwd=cwd, universal_newlines=True )
+    print(output)
+    output = output.replace("(","").replace(")","").replace(",","").split()
+    for i in range(2):
+        del output[0]
+    for i in range(14):
+        del output[len(output)-1]
+    coord = []
+    triangle = []
+    for i in range(len(output)):
+        output[i] = float(output[i])/1000000000
+        coord.append(output[i])
+        if len(coord) == 2:
+            triangle.append(coord)
+            coord = []
+        if len(triangle) == 3:
+            triangles_xy.append(triangle)
+            triangle = []
+
+    for i in range(len(triangles_xy)):
+        sides = []
+        for j in range(len(face_indicies)):
+            for k in range(3):
+                if math.isclose(triangles_xy[i][k][0], vertices[face_indicies[j]][0], rel_tol=1e-04) and math.isclose(triangles_xy[i][k][1], vertices[face_indicies[j]][1], rel_tol=1e-04):
+                    sides.append(face_indicies[j])
+        if len(sides) < 3:
+            raise Exception("Not enough Sides for the Triangle!")
+        if len(sides) > 3:
+            raise Exception("More than 3 Sides in the Triangle!")
+        faces.append(sides)
+
+        #triangle = create_triangle(vertices,sides[0],sides[1],sides[2])
+        #x,y = triangle.exterior.xy
+        #pyplot.plot(x,y)
+    #x,y = geometry_scaled.exterior.xy
+    #pyplot.plot(x,y)
+    #pyplot.show()
+    return faces
+
+    
+def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10, base_thickness=2, base_generation=True, object_generation=True):
     # Unpack the bounding box
     #north_lat, north_lng, south_lat, south_lng = bbox
     south_lng, south_lat, north_lng, north_lat = bbox
@@ -87,30 +162,36 @@ def scale_coordinates(gdf, bbox, target_size=180, max_height_mm=40, default_heig
         base_vertices, base_faces = create_solid_base(base_size, base_thickness)
         vertices.extend(base_vertices)
         faces.extend(base_faces)
-
-    if building_generation == True:
+    count = 0 #debugging only
+    if object_generation == True:
         # Calculate the maximum building height
         max_building_height = gdf.apply(lambda row: get_building_height(row, default_height), axis=1).max()
         height_scale = max_height_mm / max_building_height
 
         for idx, row in gdf.iterrows():
-            polygon = row['geometry']
-            if isinstance(polygon, shapely.geometry.Polygon):
-                exterior_coords = list(polygon.exterior.coords)
+            print(f".", end="") #Some Progress Bar
+            geometry = row['geometry']
+            count += 1 #debugging only
+            if count != 10: 
+                continue
+            if isinstance(geometry, shapely.geometry.Polygon) or isinstance(geometry, shapely.geometry.LineString):
+                if isinstance(geometry, shapely.geometry.LineString):
+                    geometry = shapely.buffer(geometry, 0.0001)
+                if isinstance(geometry, shapely.geometry.Polygon):
+                    exterior_coords = list(geometry.exterior.coords)
+                # Create vertices for the geometry
                 base_index = len(vertices)
-
-                # Create vertices for the building
                 for coord in exterior_coords:
                     x = ((coord[0] - south_lng) * scale_x) + center_offset_x
-                    if x > base_size:
-                        x = base_size
-                    if x < 0:
-                        x = 0
+                    #if x > base_size:
+                    #    x = base_size
+                    #if x < 0:
+                    #    x = 0
                     y = ((coord[1] - south_lat) * scale_y) + center_offset_y
-                    if y > base_size:
-                        y = base_size
-                    if y < 0:
-                        y = 0
+                    #if y > base_size:
+                    #    y = base_size
+                    #if y < 0:
+                    #    y = 0
                     if y < 0 or x < 0:
                         print(f"X: {x} Y: {y}")
                     height = get_building_height(row, default_height) * height_scale
@@ -119,6 +200,14 @@ def scale_coordinates(gdf, bbox, target_size=180, max_height_mm=40, default_heig
                     v_bottom = (x, y, base_thickness)
                     v_top = (x, y, height + base_thickness)
                     vertices.extend([v_bottom, v_top])
+                
+                #Create a Scaled 2D Version of the Geometry
+                geometry_coords = []
+                for coord in vertices:
+                    x = coord[0]
+                    y = coord[1]
+                    geometry_coords.append((x,y))
+                geometry_scaled = shapely.Polygon(geometry_coords)
 
                 # Create side faces
                 for i in range(len(exterior_coords) - 1):
@@ -132,13 +221,10 @@ def scale_coordinates(gdf, bbox, target_size=180, max_height_mm=40, default_heig
 
                 # Create top face
                 top_face_indices = [base_index + 2 * i + 1 for i in range(len(exterior_coords) - 1)]
-                for i in range(1, len(top_face_indices) - 1):
-                    faces.append([top_face_indices[0], top_face_indices[i], top_face_indices[i + 1]])
-
+                faces = faces + create_planar_face(top_face_indices,vertices,geometry_scaled)
                 # Create bottom face (this was omitted in the previous version)
                 bottom_face_indices = [base_index + 2 * i for i in range(len(exterior_coords) - 1)]
-                for i in range(1, len(bottom_face_indices) - 1):
-                    faces.append([bottom_face_indices[0], bottom_face_indices[i], bottom_face_indices[i + 1]])
+                #faces = faces + create_planar_face(bottom_face_indices,vertices,geometry_scaled)
 
     vertices = np.array(vertices)
     faces = np.array(faces)
@@ -151,13 +237,13 @@ def save_to_stl(vertices, faces, filename):
         for j in range(3):
             mesh_data.vectors[i][j] = vertices[face[j], :]
 
-    # Create a new plot
-    #figure = pyplot.figure()
-    #axes = figure.add_subplot(projection='3d')
-    #axes.add_collection3d(mplot3d.art3d.Poly3DCollection(mesh_data.vectors))
-    #scale = mesh_data.points.flatten()
-    #axes.auto_scale_xyz(scale, scale, scale)
-    #pyplot.show()
+    # Create a new 3D plot
+    figure = pyplot.figure()
+    axes = figure.add_subplot(projection='3d')
+    axes.add_collection3d(mplot3d.art3d.Poly3DCollection(mesh_data.vectors))
+    scale = mesh_data.points.flatten()
+    axes.auto_scale_xyz(scale, scale, scale)
+    pyplot.show()
 
     mesh_data.save(filename)
 
@@ -166,28 +252,35 @@ def main():
     base_thickness = 2
     max_height_mm = 3
     default_building_height=40
-    bbox = (4.87123, 52.35893, 4.93389, 52.38351)  #Amsterdam
-    #bbox = (-122.4194, 37.7749, -122.3894, 37.8049) #Suddersdorf
+    #bbox = (4.87123, 52.35893, 4.93389, 52.38351)  #Amsterdam
+    bbox = (10.85891, 49.27478, 10.86771, 49.27973) #Suddersdorf
+    #bbox = (10.863663, 49.277673, 10.864958, 49.278905) #Suddersdorf Weg Test
+    #bbox = (11.06375, 49.44759, 11.09048, 49.45976) #Nürnberg Zentrum
     #bbox = min Longitude , min Latitude , max Longitude , max Latitude 
 
     #Generation of Base Plate
-    vertices, faces = scale_coordinates(False, bbox, target_size=target_size, max_height_mm=max_height_mm, default_height=default_building_height, base_thickness=base_thickness, base_generation=True, building_generation=False)
-    save_to_stl(vertices, faces, 'export/standalone_base.stl')
+#    vertices, faces = prepare_mesh(False, bbox, target_size=target_size, max_height_mm=max_height_mm, default_height=default_building_height, base_thickness=base_thickness, base_generation=True, object_generation=False)
+#    save_to_stl(vertices, faces, 'export/standalone_base.stl')
 
-    #Generation of Buildings
-    gdf = fetch_location_data(bbox, "buildings")
-    vertices, faces = scale_coordinates(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, building_generation=True)
-    save_to_stl(vertices, faces, 'export/buildings_without_base.stl')
-
+#    #Generation of Buildings
+#    gdf = fetch_location_data(bbox, "buildings")
+#    vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
+#    save_to_stl(vertices, faces, 'export/buildings_without_base.stl')
+#
     #Generation of Paths
     gdf = fetch_location_data(bbox, "paths")
-    vertices, faces = scale_coordinates(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm*0.2, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, building_generation=True)
+    vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm*0.2, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
     save_to_stl(vertices, faces, 'export/paths_without_base.stl')
 
-    #Generation of Water
-    gdf = fetch_location_data(bbox, "water")
-    vertices, faces = scale_coordinates(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm*0.2, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, building_generation=True)
-    save_to_stl(vertices, faces, 'export/water_without_base.stl')
+#    #Generation of Water
+#    gdf = fetch_location_data(bbox, "water")
+#    vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm*0.2, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
+#    save_to_stl(vertices, faces, 'export/water_without_base.stl')
+#
+#    #Generation of "Green Areas" like Forest and Meadow
+#    gdf = fetch_location_data(bbox, "green")
+#    vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm*0.2, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
+#    save_to_stl(vertices, faces, 'export/greens_without_base.stl')
 
 if __name__ == "__main__":
     main()

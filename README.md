@@ -24,6 +24,9 @@ Export OpenStreetMap (OSM) tiles, convert them to STL format, and import them di
 ## Installation
 ```python3 -m pip install -r requirements.txt```
 
+This Project relies on a C++ Algorythm for Triangulation of the areas. I could not find any working library for python. 
+Please follow the instructions on GitHub for integration of the Tool. We expect it in the same directory as "main.py" with filename a.out.
+
 This project relies on several libraries, including OSM, overpass-api, osmnx, shapely, trimesh, and numpy-stl.
 
 ## Sample Usage
