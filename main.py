@@ -94,7 +94,6 @@ def create_planar_face(face_indicies, vertices, geometry_scaled):
     polygon_input_file.write(polygon_input)
     polygon_input_file.close()
     output = subprocess.check_output(["./a.out", "cache/polygon_input.txt"], cwd=cwd, universal_newlines=True )
-    print(output)
     output = output.replace("(","").replace(")","").replace(",","").split()
     for i in range(2):
         del output[0]
@@ -112,16 +111,19 @@ def create_planar_face(face_indicies, vertices, geometry_scaled):
             triangles_xy.append(triangle)
             triangle = []
 
-    for i in range(len(triangles_xy)):
+    tolerance = 1e-05
+    for triangle in triangles_xy:
         sides = []
-        for j in range(len(face_indicies)):
-            for k in range(3):
-                if math.isclose(triangles_xy[i][k][0], vertices[face_indicies[j]][0], rel_tol=1e-04) and math.isclose(triangles_xy[i][k][1], vertices[face_indicies[j]][1], rel_tol=1e-04):
-                    sides.append(face_indicies[j])
+        print()
+        for point in triangle:
+            x,y = point
+            for index in face_indicies:
+                if math.isclose(x, vertices[index][0], rel_tol=tolerance) and math.isclose(y, vertices[index][1], rel_tol=tolerance):
+                    sides.append(index)
         if len(sides) < 3:
-            raise Exception("Not enough Sides for the Triangle!")
+            raise Exception("Not enough Sides for the Triangle! Try adjusting tolerance value.")
         if len(sides) > 3:
-            raise Exception("More than 3 Sides in the Triangle!")
+            raise Exception("More than 3 Sides in the Triangle! Try adjusting tolerance value.")
         faces.append(sides)
 
         #triangle = create_triangle(vertices,sides[0],sides[1],sides[2])
@@ -162,7 +164,7 @@ def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10
         base_vertices, base_faces = create_solid_base(base_size, base_thickness)
         vertices.extend(base_vertices)
         faces.extend(base_faces)
-    count = 0 #debugging only
+    #count = 0 #debugging only
     if object_generation == True:
         # Calculate the maximum building height
         max_building_height = gdf.apply(lambda row: get_building_height(row, default_height), axis=1).max()
@@ -171,9 +173,9 @@ def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10
         for idx, row in gdf.iterrows():
             print(f".", end="") #Some Progress Bar
             geometry = row['geometry']
-            count += 1 #debugging only
-            if count != 10: 
-                continue
+            #count += 1 #debugging only
+            #if count != 10: 
+            #    continue
             if isinstance(geometry, shapely.geometry.Polygon) or isinstance(geometry, shapely.geometry.LineString):
                 if isinstance(geometry, shapely.geometry.LineString):
                     geometry = shapely.buffer(geometry, 0.0001)
