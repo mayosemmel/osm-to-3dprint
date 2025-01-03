@@ -30,6 +30,8 @@ Please follow the instructions on GitHub for integration of the Tool. We expect 
 This project relies on several libraries, including OSM, overpass-api, osmnx, shapely, trimesh, and numpy-stl.
 
 ## Sample Usage
+Please use the productive branch for a working experience. The main Branch might be in developement and therefore not working or working incorrectly
+
 Adjust the GPS coordinates to define the bounding box of the area you wish to export:
 
 ```
