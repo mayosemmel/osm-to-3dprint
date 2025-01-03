@@ -1,6 +1,8 @@
 python-venv/
 export/
 buildings_with_base.stl
+.vscode/
+a.out
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
