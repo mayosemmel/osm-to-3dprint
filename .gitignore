@@ -3,6 +3,7 @@ export/
 buildings_with_base.stl
 .vscode/
 a.out
+test.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
