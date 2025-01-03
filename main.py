@@ -9,6 +9,16 @@ from mpl_toolkits import mplot3d
 from matplotlib import pyplot
 #C++ Tool from https://github.com/RikilG/Geometry-Algorithms/tree/master/Triangulation with this version https://github.com/RikilG/Geometry-Algorithms/commit/7bdf25e425b93dc6955331a48980a4b4d8051a6d
 
+
+### TODO ###
+#
+# Generation of Greens is buggy (Artefacts and missing faces)
+# Building High Adjustment if Floors are set in OSM
+# Width of Paths
+#
+
+
+
 def fetch_location_data(bbox, location_type):
     # Fetch building footprints within the bounding box
     if location_type == "buildings":
@@ -125,12 +135,6 @@ def create_planar_face(face_indicies, vertices, geometry_scaled):
             raise Exception("More than 3 Sides in the Triangle! Try adjusting tolerance value.")
         faces.append(sides)
 
-#        triangle = create_triangle(vertices,sides[0],sides[1],sides[2])
-#        x,y = triangle.exterior.xy
-#        pyplot.plot(x,y)
-#    x,y = geometry_scaled.exterior.xy
-#    pyplot.plot(x,y)
-#    pyplot.show()
     return faces
 
 def create_geometry(vertices,indicies):
@@ -141,6 +145,13 @@ def create_geometry(vertices,indicies):
         geometry_coords.append((x,y))
     return shapely.Polygon(geometry_coords)
 
+def create_vertices_list(exterior_coords, base_thickness, height):
+    vertices_list = []
+    for coord in exterior_coords:
+        v_bottom = (coord[0], coord[1], base_thickness)
+        v_top = (coord[0], coord[1], height + base_thickness)
+        vertices_list.extend([v_bottom, v_top])
+    return vertices_list
     
 def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10, base_thickness=2, base_generation=True, object_generation=True):
     # Unpack the bounding box
@@ -166,9 +177,11 @@ def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10
     vertices = []
     faces = []
 
+
+    # Generate and append solid base
+    base_vertices, base_faces = create_solid_base(base_size, base_thickness)
+    base_geometry = create_geometry(base_vertices,range(len(base_vertices)))
     if base_generation == True:
-        # Generate and append solid base
-        base_vertices, base_faces = create_solid_base(base_size, base_thickness)
         vertices.extend(base_vertices)
         faces.extend(base_faces)
 
@@ -187,32 +200,32 @@ def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10
             if isinstance(geometry, shapely.geometry.Polygon) or isinstance(geometry, shapely.geometry.LineString):
                 if isinstance(geometry, shapely.geometry.LineString):
                     geometry = shapely.buffer(geometry, 0.0001)
-                if isinstance(geometry, shapely.geometry.Polygon):
-                    #check if points of polygon are clockwise ordered
-                    if shapely.algorithms.cga.signed_area(geometry.exterior) > 0:
-                        geometry = shapely.Polygon(reversed(geometry.exterior.coords))
-                    exterior_coords = list(geometry.exterior.coords)
-                # Create vertices for the geometry
-                base_index = len(vertices)
-                for coord in exterior_coords:
-                    x = ((coord[0] - south_lng) * scale_x) + center_offset_x
-                    #if x > base_size:
-                    #    x = base_size
-                    #if x < 0:
-                    #    x = 0
-                    y = ((coord[1] - south_lat) * scale_y) + center_offset_y
-                    #if y > base_size:
-                    #    y = base_size
-                    #if y < 0:
-                    #    y = 0
-                    if y < 0 or x < 0:
-                        print(f"X: {x} Y: {y}")
-                    height = get_building_height(row, default_height) * height_scale
-                    #print(f"Building at index {idx} with coordinates {exterior_coords} has height {height}")
+                #check if points of polygon are clockwise ordered
+                if shapely.algorithms.cga.signed_area(geometry.exterior) > 0:
+                    geometry = shapely.Polygon(reversed(geometry.exterior.coords))
+                exterior_coords = list(geometry.exterior.coords)
 
-                    v_bottom = (x, y, base_thickness)
-                    v_top = (x, y, height + base_thickness)
-                    vertices.extend([v_bottom, v_top])
+                # Scale the object
+                base_index = len(vertices)
+                uncut_vertices = []
+                height = get_building_height(row, default_height) * height_scale
+                for i in range(len(exterior_coords)):
+                    exterior_coords[i] = list(exterior_coords[i])
+                    exterior_coords[i][0] = ((exterior_coords[i][0] - south_lng) * scale_x) + center_offset_x
+                    exterior_coords[i][1] = ((exterior_coords[i][1] - south_lat) * scale_y) + center_offset_y
+                uncut_vertices.extend(create_vertices_list(exterior_coords, base_thickness, height))
+                uncut_geometry = create_geometry(uncut_vertices,range(len(uncut_vertices)))
+                if(shapely.intersects(base_geometry, uncut_geometry)):
+                    intersection = shapely.intersection(base_geometry, uncut_geometry)
+                    if isinstance(intersection, shapely.geometry.MultiPolygon):
+                        for polygon in list(intersection.geoms):
+                            exterior_coords = list(polygon.exterior.coords)
+                            vertices.extend(create_vertices_list(exterior_coords, base_thickness, height))
+                    else:
+                        exterior_coords = list(intersection.exterior.coords)
+                        vertices.extend(create_vertices_list(exterior_coords, base_thickness, height))
+                else:
+                    vertices.extend(uncut_vertices)
                 
                 # Create side faces
                 for i in range(len(exterior_coords) - 1):
@@ -246,12 +259,12 @@ def save_to_stl(vertices, faces, filename):
             mesh_data.vectors[i][j] = vertices[face[j], :]
 
     # Create a new 3D plot
-    #figure = pyplot.figure()
-    #axes = figure.add_subplot(projection='3d')
-    #axes.add_collection3d(mplot3d.art3d.Poly3DCollection(mesh_data.vectors))
-    #scale = mesh_data.points.flatten()
-    #axes.auto_scale_xyz(scale, scale, scale)
-    #pyplot.show()
+    figure = pyplot.figure()
+    axes = figure.add_subplot(projection='3d')
+    axes.add_collection3d(mplot3d.art3d.Poly3DCollection(mesh_data.vectors))
+    scale = mesh_data.points.flatten()
+    axes.auto_scale_xyz(scale, scale, scale)
+    pyplot.show()
 
     mesh_data.save(filename)
 
@@ -289,6 +302,7 @@ def main():
     gdf = fetch_location_data(bbox, "green")
     vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm*0.2, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
     save_to_stl(vertices, faces, 'export/greens_without_base.stl')
+
 
 if __name__ == "__main__":
     main()
