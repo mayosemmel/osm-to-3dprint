@@ -94,7 +94,6 @@ def create_planar_face(face_indicies, vertices, geometry_scaled):
     polygon_input_file.write(polygon_input)
     polygon_input_file.close()
     output = subprocess.check_output(["./a.out", "cache/polygon_input.txt"], cwd=cwd, universal_newlines=True )
-    print(output)
     output = output.replace("(","").replace(")","").replace(",","").split()
     for i in range(2):
         del output[0]
@@ -115,7 +114,6 @@ def create_planar_face(face_indicies, vertices, geometry_scaled):
     tolerance = 1e-05
     for triangle in triangles_xy:
         sides = []
-        print()
         for point in triangle:
             x,y = point
             for index in face_indicies:
@@ -127,12 +125,12 @@ def create_planar_face(face_indicies, vertices, geometry_scaled):
             raise Exception("More than 3 Sides in the Triangle! Try adjusting tolerance value.")
         faces.append(sides)
 
-        triangle = create_triangle(vertices,sides[0],sides[1],sides[2])
-        x,y = triangle.exterior.xy
-        pyplot.plot(x,y)
-    x,y = geometry_scaled.exterior.xy
-    pyplot.plot(x,y)
-    pyplot.show()
+#        triangle = create_triangle(vertices,sides[0],sides[1],sides[2])
+#        x,y = triangle.exterior.xy
+#        pyplot.plot(x,y)
+#    x,y = geometry_scaled.exterior.xy
+#    pyplot.plot(x,y)
+#    pyplot.show()
     return faces
 
 def create_geometry(vertices,indicies):
@@ -174,7 +172,7 @@ def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10
         vertices.extend(base_vertices)
         faces.extend(base_faces)
 
-    count = 0 #debugging only
+    #count = 0 #debugging only
     if object_generation == True:
         # Calculate the maximum building height
         max_building_height = gdf.apply(lambda row: get_building_height(row, default_height), axis=1).max()
@@ -183,13 +181,16 @@ def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10
         for idx, row in gdf.iterrows():
             print(f".", end="") #Some Progress Bar
             geometry = row['geometry']
-            count += 1 #debugging only
-            if count != 3 and count != 10: 
-                continue
+            #count += 1 #debugging only
+            #if count != 3 and count != 10: 
+            #    continue
             if isinstance(geometry, shapely.geometry.Polygon) or isinstance(geometry, shapely.geometry.LineString):
                 if isinstance(geometry, shapely.geometry.LineString):
                     geometry = shapely.buffer(geometry, 0.0001)
                 if isinstance(geometry, shapely.geometry.Polygon):
+                    #check if points of polygon are clockwise ordered
+                    if shapely.algorithms.cga.signed_area(geometry.exterior) > 0:
+                        geometry = shapely.Polygon(reversed(geometry.exterior.coords))
                     exterior_coords = list(geometry.exterior.coords)
                 # Create vertices for the geometry
                 base_index = len(vertices)
@@ -265,29 +266,29 @@ def main():
     #bbox = (11.06375, 49.44759, 11.09048, 49.45976) #Nürnberg Zentrum
     #bbox = min Longitude , min Latitude , max Longitude , max Latitude 
 
-#    #Generation of Base Plate
-#    vertices, faces = prepare_mesh(False, bbox, target_size=target_size, max_height_mm=max_height_mm, default_height=default_building_height, base_thickness=base_thickness, base_generation=True, object_generation=False)
-#    save_to_stl(vertices, faces, 'export/standalone_base.stl')
+    #Generation of Base Plate
+    vertices, faces = prepare_mesh(False, bbox, target_size=target_size, max_height_mm=max_height_mm, default_height=default_building_height, base_thickness=base_thickness, base_generation=True, object_generation=False)
+    save_to_stl(vertices, faces, 'export/standalone_base.stl')
 
     #Generation of Buildings
     gdf = fetch_location_data(bbox, "buildings")
     vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
     save_to_stl(vertices, faces, 'export/buildings_without_base.stl')
 
-#    #Generation of Paths
-#    gdf = fetch_location_data(bbox, "paths")
-#    vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm*0.2, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
-#    save_to_stl(vertices, faces, 'export/paths_without_base.stl')
-#
-#    #Generation of Water
-#    gdf = fetch_location_data(bbox, "water")
-#    vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm*0.2, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
-#    save_to_stl(vertices, faces, 'export/water_without_base.stl')
-#
-#    #Generation of "Green Areas" like Forest and Meadow
-#    gdf = fetch_location_data(bbox, "green")
-#    vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm*0.2, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
-#    save_to_stl(vertices, faces, 'export/greens_without_base.stl')
+    #Generation of Paths
+    gdf = fetch_location_data(bbox, "paths")
+    vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm*0.2, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
+    save_to_stl(vertices, faces, 'export/paths_without_base.stl')
+
+    #Generation of Water
+    gdf = fetch_location_data(bbox, "water")
+    vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm*0.2, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
+    save_to_stl(vertices, faces, 'export/water_without_base.stl')
+
+    #Generation of "Green Areas" like Forest and Meadow
+    gdf = fetch_location_data(bbox, "green")
+    vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm*0.2, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
+    save_to_stl(vertices, faces, 'export/greens_without_base.stl')
 
 if __name__ == "__main__":
     main()
