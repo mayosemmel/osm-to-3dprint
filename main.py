@@ -7,7 +7,7 @@ import math
 from stl import mesh
 from mpl_toolkits import mplot3d
 from matplotlib import pyplot
-#C++ Tool from https://github.com/RikilG/Geometry-Algorithms/tree/master/Triangulation with this version https://github.com/RikilG/Geometry-Algorithms/commit/7bdf25e425b93dc6955331a48980a4b4d8051a6d
+#C++ Tool from https://github.com/mayosemmel/Geometry-Algorithms/tree/master/Triangulation
 
 
 ### TODO ###
@@ -104,6 +104,7 @@ def create_planar_face(face_indicies, vertices, geometry_scaled):
     polygon_input_file.write(polygon_input)
     polygon_input_file.close()
     output = subprocess.check_output(["./a.out", "cache/polygon_input.txt"], cwd=cwd, universal_newlines=True )
+    print(output)
     output = output.replace("(","").replace(")","").replace(",","").split()
     for i in range(2):
         del output[0]
@@ -165,7 +166,6 @@ def create_side_faces(base_index, exterior_coords_len):
         side_faces.append([top1, bottom2, top2])
     return side_faces
 
-
 def scale_polygon(exterior_coords, bbox, target_size, base_size):
     #make the coords writable
     exterior_coords = list(exterior_coords)
@@ -187,6 +187,14 @@ def scale_polygon(exterior_coords, bbox, target_size, base_size):
         exterior_coords[i][0] = ((exterior_coords[i][0] - south_lng) * scale_x) + center_offset_x
         exterior_coords[i][1] = ((exterior_coords[i][1] - south_lat) * scale_y) + center_offset_y
     return shapely.Polygon(exterior_coords)
+
+def cut_polygon(geometry):
+    #a line from the first point to the middle vertex which should result in a more or less diagonal cut
+    first_vertex = geometry.exterior.coords[0]
+    middle_vertex = geometry.exterior.coords[int(len(geometry.exterior.coords)/2)]
+    line = shapely.LineString([first_vertex, middle_vertex])
+
+    return shapely.ops.split(geometry, line)
 
 def preprocess_objects(gdf,bbox,target_size,base_size,default_height,height_scale):
     #Create a List of 3D Geometries (objects) out of the OSM Data
@@ -210,9 +218,16 @@ def preprocess_objects(gdf,bbox,target_size,base_size,default_height,height_scal
             geometry_list[0] = shapely.buffer(geometry_list[0], 0.00002)
 
         #If Polygon has holes, remove them by splitting it into multiple Polygons
-        #TODO: This needs to be a while instead of an if and actual splitting needs to be done
-        if len(list(geometry_list[0].interiors)) > 0:
-            print(f"Amount of Linearrings (should be 0): {len(list(geometry_list[0].interiors))}")
+        interiors = len(list(geometry_list[0].interiors))
+        while interiors > 0:
+            interiors = 0
+            cut_geometries = []
+            for geometry in geometry_list:
+                cut_geometries.extend(cut_polygon(geometry).geoms)
+            geometry_list = cut_geometries
+            for geometry in geometry_list:
+                interiors += len(list(geometry.interiors))
+
 
         for geometry in geometry_list:
             #check if points of polygon are clockwise ordered
@@ -221,11 +236,22 @@ def preprocess_objects(gdf,bbox,target_size,base_size,default_height,height_scal
 
             #scale object
             geometry = scale_polygon(geometry.exterior.coords,bbox,target_size,base_size)
+            #simplify object
+            geometry.simplify(0.1)
 
             object_list.append([geometry,height])
 
+    #choose single object for debugging
+    if False:
+        id = 0
+        for object in object_list:
+            print (id)
+            id += 1
+            x,y = object[0].exterior.xy
+            #pyplot.plot(x,y)
+            #pyplot.show()
+    #object_list = ([object_list[19]])
     return object_list
-
 
 def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10, base_thickness=2, base_generation=True, object_generation=True, scaling_factor=1.2):
     # Define the base size as a percentage larger than the target area
@@ -310,18 +336,18 @@ def main():
     target_size = 180
     base_thickness = 2
     max_height_mm = 3
-    default_building_height=40
+    default_building_height=10
     #bbox = (4.87123, 52.35893, 4.93389, 52.38351)  #Amsterdam
-    bbox = (10.85891, 49.27478, 10.86771, 49.27973) #Suddersdorf
+    #bbox = (10.85891, 49.27478, 10.86771, 49.27973) #Suddersdorf
     #bbox = (10.863663, 49.277673, 10.864958, 49.278905) #Suddersdorf Weg Test
-    #bbox = (-1.266515, 51.757883, -1.263503, 51.759302) #Oxford University (Polygon with Holes)
+    bbox = (-1.266515, 51.757883, -1.263503, 51.759302) #Oxford University (Polygon with Holes)
     #bbox = (11.06375, 49.44759, 11.09048, 49.45976) #Nürnberg Zentrum
     #bbox = min Longitude , min Latitude , max Longitude , max Latitude 
 
     #Define what should be generated
     base_plate = False
-    buildings = False
-    paths = True
+    buildings = True
+    paths = False
     water = False
     green = False
 
