@@ -152,105 +152,138 @@ def create_vertices_list(exterior_coords, base_thickness, height):
         v_top = (coord[0], coord[1], height + base_thickness)
         vertices_list.extend([v_bottom, v_top])
     return vertices_list
-    
-def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10, base_thickness=2, base_generation=True, object_generation=True):
+
+def create_side_faces(base_index, exterior_coords_len):
+    side_faces = []
+    for i in range(exterior_coords_len - 1):
+        bottom1 = base_index + 2 * i
+        bottom2 = base_index + 2 * (i + 1)
+        top1 = base_index + 2 * i + 1
+        top2 = base_index + 2 * (i + 1) + 1
+
+        side_faces.append([bottom1, bottom2, top1])
+        side_faces.append([top1, bottom2, top2])
+    return side_faces
+
+
+def scale_polygon(exterior_coords, bbox, target_size, base_size):
+    #make the coords writable
+    exterior_coords = list(exterior_coords)
     # Unpack the bounding box
     #north_lat, north_lng, south_lat, south_lng = bbox
     south_lng, south_lat, north_lng, north_lat = bbox
-
-
     # Calculate the scale factors for x and y dimensions
     lat_range = north_lat - south_lat
     lng_range = north_lng - south_lng
-
-    # Define the base size as 20% larger than the target area
-    base_size = target_size * 1.2    
-
     # Calculate scaling factors based on the larger base
     scale_x = target_size / lng_range
     scale_y = target_size / lat_range
-
     # Calculate offsets to center the buildings on the enlarged base
     center_offset_x = (base_size - (scale_x * lng_range)) / 2
     center_offset_y = (base_size - (scale_y * lat_range)) / 2
+
+    for i in range(len(exterior_coords)):
+        exterior_coords[i] = list(exterior_coords[i])
+        exterior_coords[i][0] = ((exterior_coords[i][0] - south_lng) * scale_x) + center_offset_x
+        exterior_coords[i][1] = ((exterior_coords[i][1] - south_lat) * scale_y) + center_offset_y
+    return shapely.Polygon(exterior_coords)
+
+def preprocess_objects(gdf,bbox,target_size,base_size,default_height,height_scale):
+    #Create a List of 3D Geometries (objects) out of the OSM Data
+    #Geometries need to be preprocessed (Correct Type, No Holes, vertices in clockwise order, scaling, ...)
+    object_list = []
+    for idx, row in gdf.iterrows():
+        #Get the geometry out of the raw data
+        #We need a list becaue it might be the case that we need to split the polygon into multiple in later steps
+        geometry_list = ([row['geometry']])
+
+        #Check if we can process the object. Points and other stuff are not implemented (yet).
+        if not (isinstance(geometry_list[0], shapely.geometry.Polygon) or isinstance(geometry_list[0], shapely.geometry.LineString)):
+            print(f"Object of Type {idx[0]} with id {idx[1]} is not implemented (yet).")
+            continue
+
+        #Get Object height
+        height = get_building_height(row, default_height) * height_scale
+
+        # If Object is a string convert to polygon
+        if isinstance(geometry_list[0], shapely.geometry.LineString):
+            geometry_list[0] = shapely.buffer(geometry_list[0], 0.00002)
+
+        #If Polygon has holes, remove them by splitting it into multiple Polygons
+        #TODO: This needs to be a while instead of an if and actual splitting needs to be done
+        if len(list(geometry_list[0].interiors)) > 0:
+            print(f"Amount of Linearrings (should be 0): {len(list(geometry_list[0].interiors))}")
+
+        for geometry in geometry_list:
+            #check if points of polygon are clockwise ordered
+            if shapely.algorithms.cga.signed_area(geometry.exterior) > 0:
+                geometry = shapely.Polygon(reversed(geometry.exterior.coords))
+
+            #scale object
+            geometry = scale_polygon(geometry.exterior.coords,bbox,target_size,base_size)
+
+            object_list.append([geometry,height])
+
+    return object_list
+
+
+def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10, base_thickness=2, base_generation=True, object_generation=True, scaling_factor=1.2):
+    # Define the base size as a percentage larger than the target area
+    base_size = target_size * scaling_factor    
 
     vertices = []
     faces = []
 
 
-    # Generate and append solid base
+    # Generate solid base
     base_vertices, base_faces = create_solid_base(base_size, base_thickness)
     base_geometry = create_geometry(base_vertices,range(len(base_vertices)))
     if base_generation == True:
         vertices.extend(base_vertices)
         faces.extend(base_faces)
 
-    count = 0 #debugging only
+    
     if object_generation == True:
         # Calculate the maximum building height
         max_building_height = gdf.apply(lambda row: get_building_height(row, default_height), axis=1).max()
         height_scale = max_height_mm / max_building_height
 
-        for idx, row in gdf.iterrows():
-            print(f".", end="") #Some Progress Bar
-            geometry = row['geometry']
-            #count += 1 #debugging only
-            #print(count)
-            #if count != 1: 
-            #    continue
-            if isinstance(geometry, shapely.geometry.Polygon) or isinstance(geometry, shapely.geometry.LineString):
-                if isinstance(geometry, shapely.geometry.LineString):
-                    geometry = shapely.buffer(geometry, 0.00002)
-                if len(list(geometry.interiors)) > 0:
-                    print(f"Anzahl Linearringe: {len(list(geometry.interiors))}")
-                #check if points of polygon are clockwise ordered
-                if shapely.algorithms.cga.signed_area(geometry.exterior) > 0:
-                    geometry = shapely.Polygon(reversed(geometry.exterior.coords))
-                exterior_coords = list(geometry.exterior.coords)
-                #x,y = geometry.exterior.xy
-                #pyplot.plot(x,y)
-                #pyplot.show()
-                # Scale the object
-                base_index = len(vertices)
-                uncut_vertices = []
-                height = get_building_height(row, default_height) * height_scale
-                for i in range(len(exterior_coords)):
-                    exterior_coords[i] = list(exterior_coords[i])
-                    exterior_coords[i][0] = ((exterior_coords[i][0] - south_lng) * scale_x) + center_offset_x
-                    exterior_coords[i][1] = ((exterior_coords[i][1] - south_lat) * scale_y) + center_offset_y
-                uncut_vertices.extend(create_vertices_list(exterior_coords, base_thickness, height))
-                uncut_geometry = create_geometry(uncut_vertices,range(len(uncut_vertices)))
-                if(shapely.intersects(base_geometry, uncut_geometry)):
-                    intersection = shapely.intersection(base_geometry, uncut_geometry)
-                    if isinstance(intersection, shapely.geometry.MultiPolygon):
-                        for polygon in list(intersection.geoms):
-                            exterior_coords = list(polygon.exterior.coords)
-                            vertices.extend(create_vertices_list(exterior_coords, base_thickness, height))
-                    else:
-                        exterior_coords = list(intersection.exterior.coords)
+        for object in preprocess_objects(gdf,bbox,target_size,base_size,default_height,height_scale):
+            exterior_coords = list(object[0].exterior.coords)
+            height = object[1]
+
+            #Get Base Index (Before adding new vertices of this object)
+            base_index = len(vertices)
+
+            #Remove any overhangs over the base plate. This is required since some objects start within the bbox but end outside of it.
+            #If this is the case we have object which are a lot to big and are not printable.
+            #After Cleanup the Vertices of the final object are added to the whole list
+            uncut_vertices = create_vertices_list(exterior_coords, base_thickness, height)
+            uncut_geometry = create_geometry(uncut_vertices,range(len(uncut_vertices)))
+            if(shapely.intersects(base_geometry, uncut_geometry)):
+                intersection = shapely.intersection(base_geometry, uncut_geometry)
+                if isinstance(intersection, shapely.geometry.MultiPolygon):
+                    for polygon in list(intersection.geoms):
+                        exterior_coords = list(polygon.exterior.coords)
                         vertices.extend(create_vertices_list(exterior_coords, base_thickness, height))
                 else:
-                    vertices.extend(uncut_vertices)
-                
-                # Create side faces
-                for i in range(len(exterior_coords) - 1):
-                    bottom1 = base_index + 2 * i
-                    bottom2 = base_index + 2 * (i + 1)
-                    top1 = base_index + 2 * i + 1
-                    top2 = base_index + 2 * (i + 1) + 1
+                    exterior_coords = list(intersection.exterior.coords)
+                    vertices.extend(create_vertices_list(exterior_coords, base_thickness, height))
+            else:
+                vertices.extend(uncut_vertices)
+            
+            # Create side faces
+            faces.extend(create_side_faces(base_index, len(exterior_coords)))
 
-                    faces.append([bottom1, bottom2, top1])
-                    faces.append([top1, bottom2, top2])
+            # Create top and bottom face
+            top_face_indices = [base_index + 2 * i + 1 for i in range(len(exterior_coords) - 1)]
+            geometry_scaled = create_geometry(vertices,top_face_indices)
+            faces = faces + create_planar_face(top_face_indices,vertices,geometry_scaled)
 
-                # Create top and bottom face
-                top_face_indices = [base_index + 2 * i + 1 for i in range(len(exterior_coords) - 1)]
-                geometry_scaled = create_geometry(vertices,top_face_indices)
-                faces = faces + create_planar_face(top_face_indices,vertices,geometry_scaled)
-
-                # Create bottom face
-                bottom_face_indices = [base_index + 2 * i for i in range(len(exterior_coords) - 1)]
-                geometry_scaled = create_geometry(vertices,bottom_face_indices)
-                faces = faces + create_planar_face(bottom_face_indices,vertices,geometry_scaled)
+            # Create bottom face
+            bottom_face_indices = [base_index + 2 * i for i in range(len(exterior_coords) - 1)]
+            geometry_scaled = create_geometry(vertices,bottom_face_indices)
+            faces = faces + create_planar_face(bottom_face_indices,vertices,geometry_scaled)
 
     vertices = np.array(vertices)
     faces = np.array(faces)
@@ -287,7 +320,7 @@ def main():
 
     #Define what should be generated
     base_plate = False
-    buildings = True
+    buildings = False
     paths = True
     water = False
     green = False
