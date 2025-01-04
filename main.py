@@ -185,7 +185,7 @@ def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10
         vertices.extend(base_vertices)
         faces.extend(base_faces)
 
-    #count = 0 #debugging only
+    count = 0 #debugging only
     if object_generation == True:
         # Calculate the maximum building height
         max_building_height = gdf.apply(lambda row: get_building_height(row, default_height), axis=1).max()
@@ -195,16 +195,21 @@ def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10
             print(f".", end="") #Some Progress Bar
             geometry = row['geometry']
             #count += 1 #debugging only
-            #if count != 3 and count != 10: 
+            #print(count)
+            #if count != 1: 
             #    continue
             if isinstance(geometry, shapely.geometry.Polygon) or isinstance(geometry, shapely.geometry.LineString):
                 if isinstance(geometry, shapely.geometry.LineString):
                     geometry = shapely.buffer(geometry, 0.00002)
+                if len(list(geometry.interiors)) > 0:
+                    print(f"Anzahl Linearringe: {len(list(geometry.interiors))}")
                 #check if points of polygon are clockwise ordered
                 if shapely.algorithms.cga.signed_area(geometry.exterior) > 0:
                     geometry = shapely.Polygon(reversed(geometry.exterior.coords))
                 exterior_coords = list(geometry.exterior.coords)
-
+                #x,y = geometry.exterior.xy
+                #pyplot.plot(x,y)
+                #pyplot.show()
                 # Scale the object
                 base_index = len(vertices)
                 uncut_vertices = []
@@ -245,7 +250,7 @@ def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10
                 # Create bottom face
                 bottom_face_indices = [base_index + 2 * i for i in range(len(exterior_coords) - 1)]
                 geometry_scaled = create_geometry(vertices,bottom_face_indices)
-                #faces = faces + create_planar_face(bottom_face_indices,vertices,geometry_scaled)
+                faces = faces + create_planar_face(bottom_face_indices,vertices,geometry_scaled)
 
     vertices = np.array(vertices)
     faces = np.array(faces)
@@ -276,12 +281,13 @@ def main():
     #bbox = (4.87123, 52.35893, 4.93389, 52.38351)  #Amsterdam
     bbox = (10.85891, 49.27478, 10.86771, 49.27973) #Suddersdorf
     #bbox = (10.863663, 49.277673, 10.864958, 49.278905) #Suddersdorf Weg Test
+    #bbox = (-1.266515, 51.757883, -1.263503, 51.759302) #Oxford University (Polygon with Holes)
     #bbox = (11.06375, 49.44759, 11.09048, 49.45976) #Nürnberg Zentrum
     #bbox = min Longitude , min Latitude , max Longitude , max Latitude 
 
     #Define what should be generated
     base_plate = False
-    buildings = False
+    buildings = True
     paths = True
     water = False
     green = False
