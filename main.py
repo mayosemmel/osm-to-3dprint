@@ -2,6 +2,8 @@ import osmnx as ox
 import shapely
 import numpy as np
 import subprocess
+import concurrent.futures
+import multiprocessing
 import os
 import math
 import shapely.prepared
@@ -238,15 +240,16 @@ def cut_polygon(geometry):
                 i += 1
     return geometry_collection.geoms
 
-def preprocess_objects(gdf,bbox,target_size,base_size,default_height,height_scale):
+def multi_run_wrapper(args):
+   return preprocess_object(*args)
+
+def preprocess_objects_meta(gdf,bbox,target_size,base_size,default_height,height_scale):
     #Create a List of 3D Geometries (objects) out of the OSM Data
     #Geometries need to be preprocessed (Correct Type, No Holes, vertices in clockwise order, scaling, ...)
     id = 0
     object_list = []
-
+    parameters = []
     for idx, row in gdf.iterrows():
-        #Simple Progress Indicator
-        print(f"preprocessing id: {id} of {len(list(gdf.iterrows()))-1}")
         #Get the geometry out of the raw data
         #We need a list becaue it might be the case that we need to split the polygon into multiple in later steps
         geometry_list = ([row['geometry']])
@@ -256,54 +259,58 @@ def preprocess_objects(gdf,bbox,target_size,base_size,default_height,height_scal
             print(f"Object of Type {idx[0]} with id {idx[1]} is not implemented (yet).")
             id += 1
             continue
+        
+        #Call the actual preprocessing function
+        parameters.append([id,geometry_list,idx,row,gdf,bbox,target_size,base_size,default_height,height_scale])
+        
 
-        #Get Object height
-        height = get_building_height(row, default_height) * height_scale
+        #object_list.extend(preprocess_object(id,geometry_list,idx,row,gdf,bbox,target_size,base_size,default_height,height_scale))
 
-        # If Object is a string convert to polygon
-        if isinstance(geometry_list[0], shapely.geometry.LineString):
-            geometry_list[0] = shapely.buffer(geometry_list[0], 0.00002)
-
-        #If Polygon has holes, remove them by splitting it into multiple Polygons
-        interiors = len(list(geometry_list[0].interiors))
-        while interiors > 0:
-            interiors = 0
-            cut_geometries = []
-            for geometry in geometry_list:
-                if(len(list(geometry.interiors))):
-                    cut_geometries.extend(cut_polygon(geometry))
-                else:
-                    #nothing to cut
-                    cut_geometries.append(geometry)
-            geometry_list = cut_geometries
-            for geometry in geometry_list:
-                interiors += len(list(geometry.interiors))
-            
-        for geometry in geometry_list:
-            #check if points of polygon are clockwise ordered
-            if shapely.algorithms.cga.signed_area(geometry.exterior) > 0:
-                geometry = shapely.Polygon(reversed(geometry.exterior.coords))
-
-            #scale object
-            geometry = scale_polygon(geometry.exterior.coords,bbox,target_size,base_size)
-            #simplify object
-            geometry.simplify(0.1)
-
-            object_list.append([geometry,height])
         id += 1
-
+    with multiprocessing.Pool(12) as p:
+        object_list = p.map(multi_run_wrapper,parameters)
     print(f"preprocessing done")
-    #choose single object for debugging
-    if False:
-        id = 0
-        for object in object_list:
-            print (id)
-            id += 1
-            x,y = object[0].exterior.xy
-            pyplot.plot(x,y)
-            pyplot.show()
-    #object_list = ([object_list[19]])
     return object_list
+
+def preprocess_object(processing_id,geometry_list,idx,row,gdf,bbox,target_size,base_size,default_height,height_scale):
+    object_list = []
+
+    #Simple Progress Indicator
+    print(f"preprocessing id: {processing_id} of {len(list(gdf.iterrows()))-1}")
+    
+    #Get Object height
+    height = get_building_height(row, default_height) * height_scale
+
+    # If Object is a string convert to polygon
+    if isinstance(geometry_list[0], shapely.geometry.LineString):
+        geometry_list[0] = shapely.buffer(geometry_list[0], 0.00002)
+
+    #If Polygon has holes, remove them by splitting it into multiple Polygons
+    interiors = len(list(geometry_list[0].interiors))
+    while interiors > 0:
+        interiors = 0
+        cut_geometries = []
+        for geometry in geometry_list:
+            if(len(list(geometry.interiors))):
+                cut_geometries.extend(cut_polygon(geometry))
+            else:
+                #nothing to cut
+                cut_geometries.append(geometry)
+        geometry_list = cut_geometries
+        for geometry in geometry_list:
+            interiors += len(list(geometry.interiors))
+        
+    for geometry in geometry_list:
+        #check if points of polygon are clockwise ordered
+        if shapely.algorithms.cga.signed_area(geometry.exterior) > 0:
+            geometry = shapely.Polygon(reversed(geometry.exterior.coords))
+
+        #scale object
+        geometry = scale_polygon(geometry.exterior.coords,bbox,target_size,base_size)
+        #simplify object
+        geometry.simplify(0.1)
+        object = ([geometry,height])
+    return object
 
 def create_add_faces(base_index, exterior_coords,vertices,faces):
     # Create side faces
@@ -341,7 +348,7 @@ def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10
         max_building_height = gdf.apply(lambda row: get_building_height(row, default_height), axis=1).max()
         height_scale = max_height_mm / max_building_height
 
-        preprocessed_objects = preprocess_objects(gdf,bbox,target_size,base_size,default_height,height_scale)
+        preprocessed_objects = preprocess_objects_meta(gdf,bbox,target_size,base_size,default_height,height_scale)
         id=0
         for object in preprocessed_objects:
             #Simple Progress Indicator
@@ -412,6 +419,8 @@ def main():
     water = True
     green = True
 
+    #Test Stuff
+    print("Number of cpu : ", multiprocessing.cpu_count())
 
     #Generation of Base Plate
     if base_plate:
