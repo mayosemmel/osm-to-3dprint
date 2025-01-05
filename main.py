@@ -119,6 +119,13 @@ def create_planar_face(face_indicies, vertices):
     coord = []
     triangle = []
     for i in range(len(output)):
+        if output[i].startswith("Unable"):
+            print("")
+            print("-------------------------------- WARNING --------------------------------")
+            print("--------------- Unable to triangulate the following input ---------------")
+            print(polygon_input)
+            print("-------------------------------------------------------------------------")
+            return faces
         output[i] = float(output[i])/1000000000
         coord.append(output[i])
         if len(coord) == 2:
@@ -199,6 +206,7 @@ def cut_polygon(geometry):
     first_index = 0
     #we are doing this until something is cut
     while geometry_count < 2:
+        geometry.simplify(0.001)
         #a line from the between first and middle vertex which should result in a more or less diagonal cut
         second_index = int(len(geometry.exterior.coords)/2)
         first_vertex = geometry.exterior.coords[first_index]
@@ -208,18 +216,36 @@ def cut_polygon(geometry):
         #In some cases we don't cut anything, then we need another position.
         #Therefore we make the polygon more precise and move the starting index by 1
         geometry_count = len(geometry_collection.geoms)
+        not_counting_geoms = 0
+        for geom in geometry_collection.geoms:
+            #if less than 10% of the original geometry is cut, ignore the cut and try again at another position
+            #this prevents infinit loops
+            if geom.area < geometry.area * 0.1:
+                not_counting_geoms += 1
+        geometry_count -= not_counting_geoms
         if geometry_count < 2:
             geometry = geometry_collection.geoms[0]
             max_segment_length = 1/(first_index+1)
+            #print(f"max_segment_length: {max_segment_length} - first_index: {first_index}")
             geometry = shapely.segmentize(geometry,max_segment_length)
             first_index += 1
+            i = 0
+            while (len(geometry.exterior.coords)-1) <= first_index:
+                #print(f"max_segment_length: {max_segment_length} - first_index: {first_index}")
+                max_segment_length = 1/(first_index+1+i)
+                geometry = shapely.segmentize(geometry,max_segment_length)
+                i += 1
     return geometry_collection.geoms
 
 def preprocess_objects(gdf,bbox,target_size,base_size,default_height,height_scale):
     #Create a List of 3D Geometries (objects) out of the OSM Data
     #Geometries need to be preprocessed (Correct Type, No Holes, vertices in clockwise order, scaling, ...)
+    id = 0
     object_list = []
+
     for idx, row in gdf.iterrows():
+        #Simple Progress Indicator
+        print(f"preprocessing id: {id} of {len(list(gdf.iterrows()))-1}")
         #Get the geometry out of the raw data
         #We need a list becaue it might be the case that we need to split the polygon into multiple in later steps
         geometry_list = ([row['geometry']])
@@ -227,9 +253,9 @@ def preprocess_objects(gdf,bbox,target_size,base_size,default_height,height_scal
         #Check if we can process the object. Points and other stuff are not implemented (yet).
         if not (isinstance(geometry_list[0], shapely.geometry.Polygon) or isinstance(geometry_list[0], shapely.geometry.LineString)):
             print(f"Object of Type {idx[0]} with id {idx[1]} is not implemented (yet).")
+            id += 1
             continue
 
-        height = get_building_height(row, default_height)
         #Get Object height
         height = get_building_height(row, default_height) * height_scale
 
@@ -263,6 +289,7 @@ def preprocess_objects(gdf,bbox,target_size,base_size,default_height,height_scal
             geometry.simplify(0.1)
 
             object_list.append([geometry,height])
+        id += 1
 
     print(f"preprocessing done")
     #choose single object for debugging
@@ -290,7 +317,6 @@ def create_add_faces(base_index, exterior_coords,vertices,faces):
     faces.extend(create_planar_face(bottom_face_indices,vertices))
 
     return faces
-
 
 def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10, base_thickness=2, base_generation=True, object_generation=True, scaling_factor=1.2):
     # Define the base size as a percentage larger than the target area
@@ -372,19 +398,18 @@ def main():
     base_thickness = 2
     max_height_mm = 3
     default_building_height=8
-    #bbox = (4.87123, 52.35893, 4.93389, 52.38351)  #Amsterdam
-    bbox = (10.85891, 49.27478, 10.86771, 49.27973) #Suddersdorf
-    #bbox = (10.863663, 49.277673, 10.864958, 49.278905) #Suddersdorf Weg Test
+    bbox = (4.87123, 52.35893, 4.93389, 52.38351)  #Amsterdam
+    #bbox = (10.85891, 49.27478, 10.86771, 49.27973) #Suddersdorf
     #bbox = (-1.266515, 51.757883, -1.263503, 51.759302) #Oxford University (Polygon with Holes)
     #bbox = (11.06375, 49.44759, 11.09048, 49.45976) #Nürnberg Zentrum
     #bbox = min Longitude , min Latitude , max Longitude , max Latitude 
 
     #Define what should be generated
-    base_plate = False
+    base_plate = True
     buildings = True
-    paths = False
-    water = False
-    green = False
+    paths = True
+    water = True
+    green = True
 
 
     #Generation of Base Plate
