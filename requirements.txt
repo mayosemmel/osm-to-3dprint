@@ -3,6 +3,4 @@ requests
 shapely 
 trimesh 
 numpy-stl
-os
-math
 matplotlib

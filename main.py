@@ -13,10 +13,11 @@ from matplotlib import pyplot
 
 ### TODO ###
 #
-# Water on Greens -> Greens need to be cut out
 # Width of Paths
+# triangulation errors
 # Priority of Layers -> Water cuts out in Green, Paths cut out Water and Green
 # Performance!! Multithreading!
+# maybe implement triangulation by myself?
 
 
 
