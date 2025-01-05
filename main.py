@@ -4,6 +4,7 @@ import numpy as np
 import subprocess
 import os
 import math
+import shapely.prepared
 from stl import mesh
 from mpl_toolkits import mplot3d
 from matplotlib import pyplot
@@ -12,10 +13,10 @@ from matplotlib import pyplot
 
 ### TODO ###
 #
-# Generation of Greens is buggy (Artefacts and missing faces)
-# Building High Adjustment if Floors are set in OSM
+# Water on Greens -> Greens need to be cut out
 # Width of Paths
-#
+# Priority of Layers -> Water cuts out in Green, Paths cut out Water and Green
+# Performance!! Multithreading!
 
 
 
@@ -39,11 +40,15 @@ def get_building_height(row, default_height=10):
             height = row[attr]
             if isinstance(height, (int, float)) and not np.isnan(height):
                 if attr == 'building:levels':
-                    return height * 3  # Assuming 3 meters per level
+                    height = height * 3  # Assuming 3 meters per level
+                    return height
                 return height
             elif isinstance(height, str):
                 try:
                     height_value = float(height.replace('m', '').strip())
+                    if attr == 'building:levels':
+                        height = height_value * 3  # Assuming 3 meters per level
+                        return height
                     return height_value
                 except ValueError:
                     continue
@@ -74,24 +79,26 @@ def create_solid_base(base_size, base_thickness=2):
 
     return base_vertices, base_faces
 
-def check_if_overlapping_or_empty(geometry1, geometry2):
-    if isinstance(geometry1, shapely.geometry.Polygon) and isinstance(geometry2, shapely.geometry.Polygon):
-        difference = shapely.difference(geometry1, geometry2)
+def check_if_outside_overlapping_or_empty(geometry, base_geometry):
+    if isinstance(geometry, shapely.geometry.Polygon) and isinstance(base_geometry, shapely.geometry.Polygon):
+        if geometry.area <= 0:
+            return True
+        difference = shapely.difference(geometry, base_geometry)
     else:
-        return True
+        raise Exception("Error, Shapes are no Polygons")
     if isinstance(difference, shapely.geometry.Polygon):
-        if difference.area != 0:
+        if difference.area > 0:
             return True
         else:
             return False
     else:
-        print(f"Error, Shapes invalid")
+        raise Exception("Error, Shapes invalid")
 
 def create_triangle(vertices,side1,side2,side3):
     triangle_coords = ((vertices[side1][0],vertices[side1][1]),(vertices[side2][0],vertices[side2][1]),(vertices[side3][0],vertices[side3][1]))
     return shapely.Polygon(triangle_coords)
 
-def create_planar_face(face_indicies, vertices, geometry_scaled):
+def create_planar_face(face_indicies, vertices):
     faces = []
     triangles_xy = []
 
@@ -104,7 +111,6 @@ def create_planar_face(face_indicies, vertices, geometry_scaled):
     polygon_input_file.write(polygon_input)
     polygon_input_file.close()
     output = subprocess.check_output(["./a.out", "cache/polygon_input.txt"], cwd=cwd, universal_newlines=True )
-    print(output)
     output = output.replace("(","").replace(")","").replace(",","").split()
     for i in range(2):
         del output[0]
@@ -189,12 +195,25 @@ def scale_polygon(exterior_coords, bbox, target_size, base_size):
     return shapely.Polygon(exterior_coords)
 
 def cut_polygon(geometry):
-    #a line from the first point to the middle vertex which should result in a more or less diagonal cut
-    first_vertex = geometry.exterior.coords[0]
-    middle_vertex = geometry.exterior.coords[int(len(geometry.exterior.coords)/2)]
-    line = shapely.LineString([first_vertex, middle_vertex])
-
-    return shapely.ops.split(geometry, line)
+    geometry_count = 1
+    first_index = 0
+    #we are doing this until something is cut
+    while geometry_count < 2:
+        #a line from the between first and middle vertex which should result in a more or less diagonal cut
+        second_index = int(len(geometry.exterior.coords)/2)
+        first_vertex = geometry.exterior.coords[first_index]
+        second_vertex = geometry.exterior.coords[second_index]
+        line = shapely.LineString([first_vertex, second_vertex])
+        geometry_collection = shapely.ops.split(geometry, line)
+        #In some cases we don't cut anything, then we need another position.
+        #Therefore we make the polygon more precise and move the starting index by 1
+        geometry_count = len(geometry_collection.geoms)
+        if geometry_count < 2:
+            geometry = geometry_collection.geoms[0]
+            max_segment_length = 1/(first_index+1)
+            geometry = shapely.segmentize(geometry,max_segment_length)
+            first_index += 1
+    return geometry_collection.geoms
 
 def preprocess_objects(gdf,bbox,target_size,base_size,default_height,height_scale):
     #Create a List of 3D Geometries (objects) out of the OSM Data
@@ -210,6 +229,7 @@ def preprocess_objects(gdf,bbox,target_size,base_size,default_height,height_scal
             print(f"Object of Type {idx[0]} with id {idx[1]} is not implemented (yet).")
             continue
 
+        height = get_building_height(row, default_height)
         #Get Object height
         height = get_building_height(row, default_height) * height_scale
 
@@ -223,12 +243,15 @@ def preprocess_objects(gdf,bbox,target_size,base_size,default_height,height_scal
             interiors = 0
             cut_geometries = []
             for geometry in geometry_list:
-                cut_geometries.extend(cut_polygon(geometry).geoms)
+                if(len(list(geometry.interiors))):
+                    cut_geometries.extend(cut_polygon(geometry))
+                else:
+                    #nothing to cut
+                    cut_geometries.append(geometry)
             geometry_list = cut_geometries
             for geometry in geometry_list:
                 interiors += len(list(geometry.interiors))
-
-
+            
         for geometry in geometry_list:
             #check if points of polygon are clockwise ordered
             if shapely.algorithms.cga.signed_area(geometry.exterior) > 0:
@@ -241,6 +264,7 @@ def preprocess_objects(gdf,bbox,target_size,base_size,default_height,height_scal
 
             object_list.append([geometry,height])
 
+    print(f"preprocessing done")
     #choose single object for debugging
     if False:
         id = 0
@@ -248,10 +272,25 @@ def preprocess_objects(gdf,bbox,target_size,base_size,default_height,height_scal
             print (id)
             id += 1
             x,y = object[0].exterior.xy
-            #pyplot.plot(x,y)
-            #pyplot.show()
+            pyplot.plot(x,y)
+            pyplot.show()
     #object_list = ([object_list[19]])
     return object_list
+
+def create_add_faces(base_index, exterior_coords,vertices,faces):
+    # Create side faces
+    faces.extend(create_side_faces(base_index, len(exterior_coords)))
+
+    # Create top and bottom face
+    top_face_indices = [base_index + 2 * i + 1 for i in range(len(exterior_coords) - 1)]
+    faces.extend(create_planar_face(top_face_indices,vertices))
+
+    # Create bottom face
+    bottom_face_indices = [base_index + 2 * i for i in range(len(exterior_coords) - 1)]
+    faces.extend(create_planar_face(bottom_face_indices,vertices))
+
+    return faces
+
 
 def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10, base_thickness=2, base_generation=True, object_generation=True, scaling_factor=1.2):
     # Define the base size as a percentage larger than the target area
@@ -263,7 +302,8 @@ def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10
 
     # Generate solid base
     base_vertices, base_faces = create_solid_base(base_size, base_thickness)
-    base_geometry = create_geometry(base_vertices,range(len(base_vertices)))
+    # only half array will be used since we only need top OR bottom for the 2D object.
+    base_geometry = create_geometry(base_vertices,range(int(len(base_vertices)/2)))
     if base_generation == True:
         vertices.extend(base_vertices)
         faces.extend(base_faces)
@@ -274,42 +314,37 @@ def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10
         max_building_height = gdf.apply(lambda row: get_building_height(row, default_height), axis=1).max()
         height_scale = max_height_mm / max_building_height
 
-        for object in preprocess_objects(gdf,bbox,target_size,base_size,default_height,height_scale):
+        preprocessed_objects = preprocess_objects(gdf,bbox,target_size,base_size,default_height,height_scale)
+        id=0
+        for object in preprocessed_objects:
+            #Simple Progress Indicator
+            print(f"processing id: {id} of {len(preprocessed_objects)-1}")
             exterior_coords = list(object[0].exterior.coords)
             height = object[1]
-
-            #Get Base Index (Before adding new vertices of this object)
-            base_index = len(vertices)
-
             #Remove any overhangs over the base plate. This is required since some objects start within the bbox but end outside of it.
             #If this is the case we have object which are a lot to big and are not printable.
             #After Cleanup the Vertices of the final object are added to the whole list
             uncut_vertices = create_vertices_list(exterior_coords, base_thickness, height)
-            uncut_geometry = create_geometry(uncut_vertices,range(len(uncut_vertices)))
-            if(shapely.intersects(base_geometry, uncut_geometry)):
-                intersection = shapely.intersection(base_geometry, uncut_geometry)
+            if(shapely.intersects(base_geometry, object[0])):
+                intersection = shapely.intersection(base_geometry, object[0])
                 if isinstance(intersection, shapely.geometry.MultiPolygon):
                     for polygon in list(intersection.geoms):
                         exterior_coords = list(polygon.exterior.coords)
+                        #Get Base Index (Before adding new vertices of this object)
+                        base_index = len(vertices)
                         vertices.extend(create_vertices_list(exterior_coords, base_thickness, height))
+                        faces = create_add_faces(base_index, exterior_coords, vertices, faces)
+                    id += 1
                 else:
                     exterior_coords = list(intersection.exterior.coords)
+                    #Get Base Index (Before adding new vertices of this object)
+                    base_index = len(vertices)
                     vertices.extend(create_vertices_list(exterior_coords, base_thickness, height))
+                    faces = create_add_faces(base_index, exterior_coords, vertices, faces)
+                    id += 1
             else:
-                vertices.extend(uncut_vertices)
-            
-            # Create side faces
-            faces.extend(create_side_faces(base_index, len(exterior_coords)))
-
-            # Create top and bottom face
-            top_face_indices = [base_index + 2 * i + 1 for i in range(len(exterior_coords) - 1)]
-            geometry_scaled = create_geometry(vertices,top_face_indices)
-            faces = faces + create_planar_face(top_face_indices,vertices,geometry_scaled)
-
-            # Create bottom face
-            bottom_face_indices = [base_index + 2 * i for i in range(len(exterior_coords) - 1)]
-            geometry_scaled = create_geometry(vertices,bottom_face_indices)
-            faces = faces + create_planar_face(bottom_face_indices,vertices,geometry_scaled)
+                id += 1
+                continue
 
     vertices = np.array(vertices)
     faces = np.array(faces)
@@ -323,12 +358,12 @@ def save_to_stl(vertices, faces, filename):
             mesh_data.vectors[i][j] = vertices[face[j], :]
 
     # Create a new 3D plot
-    figure = pyplot.figure()
-    axes = figure.add_subplot(projection='3d')
-    axes.add_collection3d(mplot3d.art3d.Poly3DCollection(mesh_data.vectors))
-    scale = mesh_data.points.flatten()
-    axes.auto_scale_xyz(scale, scale, scale)
-    pyplot.show()
+    #figure = pyplot.figure()
+    #axes = figure.add_subplot(projection='3d')
+    #axes.add_collection3d(mplot3d.art3d.Poly3DCollection(mesh_data.vectors))
+    #scale = mesh_data.points.flatten()
+    #axes.auto_scale_xyz(scale, scale, scale)
+    #pyplot.show()
 
     mesh_data.save(filename)
 
@@ -336,11 +371,11 @@ def main():
     target_size = 180
     base_thickness = 2
     max_height_mm = 3
-    default_building_height=10
+    default_building_height=8
     #bbox = (4.87123, 52.35893, 4.93389, 52.38351)  #Amsterdam
-    #bbox = (10.85891, 49.27478, 10.86771, 49.27973) #Suddersdorf
+    bbox = (10.85891, 49.27478, 10.86771, 49.27973) #Suddersdorf
     #bbox = (10.863663, 49.277673, 10.864958, 49.278905) #Suddersdorf Weg Test
-    bbox = (-1.266515, 51.757883, -1.263503, 51.759302) #Oxford University (Polygon with Holes)
+    #bbox = (-1.266515, 51.757883, -1.263503, 51.759302) #Oxford University (Polygon with Holes)
     #bbox = (11.06375, 49.44759, 11.09048, 49.45976) #Nürnberg Zentrum
     #bbox = min Longitude , min Latitude , max Longitude , max Latitude 
 
@@ -356,30 +391,35 @@ def main():
     if base_plate:
         vertices, faces = prepare_mesh(False, bbox, target_size=target_size, max_height_mm=max_height_mm, default_height=default_building_height, base_thickness=base_thickness, base_generation=True, object_generation=False)
         save_to_stl(vertices, faces, 'export/standalone_base.stl')
+        print(f"generation of base plate completed")
 
     #Generation of Buildings
     if buildings:
         gdf = fetch_location_data(bbox, "buildings")
         vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/buildings_without_base.stl')
+        print(f"generation of buildings completed")
 
     #Generation of Paths
     if paths:
         gdf = fetch_location_data(bbox, "paths")
-        vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm*0.2, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
+        vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm*0.25, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/paths_without_base.stl')
+        print(f"generation of paths completed")
 
     #Generation of Water
     if water:
         gdf = fetch_location_data(bbox, "water")
-        vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm*0.2, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
+        vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm*0.15, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/water_without_base.stl')
+        print(f"generation of water completed")
 
     #Generation of "Green Areas" like Forest and Meadow
     if green:
         gdf = fetch_location_data(bbox, "green")
         vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm*0.2, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/greens_without_base.stl')
+        print(f"generation of greens completed")
 
 
 if __name__ == "__main__":

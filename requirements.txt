@@ -5,3 +5,4 @@ trimesh
 numpy-stl
 os
 math
+matplotlib
