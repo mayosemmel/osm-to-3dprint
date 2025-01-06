@@ -1,5 +1,5 @@
 python-venv/
-export/
+export/*
 buildings_with_base.stl
 .vscode/
 a.out
