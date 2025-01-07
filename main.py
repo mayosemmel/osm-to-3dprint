@@ -315,6 +315,7 @@ def preprocess_object(processing_id,geometry_list,idx,row,gdf,bbox,target_size,b
         #simplify object
         geometry.simplify(0.1)
         object = ([geometry,height])
+
     print(f"finished preprocessing of id: {processing_id} of {len(list(gdf.iterrows()))-1}")
     return object
 
@@ -419,9 +420,9 @@ def main():
     #bbox = min Longitude , min Latitude , max Longitude , max Latitude 
 
     #Define what should be generated
-    base_plate = False
-    buildings = False
-    paths = True
+    base_plate = True
+    buildings = True
+    paths = False
     water = False
     green = False
 
