@@ -19,6 +19,8 @@ from matplotlib import pyplot
 # triangulation errors
 # Priority of Layers -> Water cuts out in Green, Paths cut out Water and Green
 # Performance!! Multithreading!
+# Move configuration to extra file
+# Move functions to extra file
 # maybe implement triangulation by myself?
 
 
@@ -204,12 +206,15 @@ def scale_polygon(exterior_coords, bbox, target_size, base_size):
         exterior_coords[i][1] = ((exterior_coords[i][1] - south_lat) * scale_y) + center_offset_y
     return shapely.Polygon(exterior_coords)
 
-def cut_polygon(geometry):
+def cut_polygon(geometry):    
     geometry_count = 1
     first_index = 0
     #we are doing this until something is cut
     while geometry_count < 2:
         geometry.simplify(0.001)
+        #If geometry is too small it takes ages to cut on the right place and we have no benefit. So we just remove the interior.
+        if geometry.area < 1e-6:
+            geometry = create_geometry( geometry.exterior.coords , range(len(geometry.exterior.coords )))
         #a line from the between first and middle vertex which should result in a more or less diagonal cut
         second_index = int(len(geometry.exterior.coords)/2)
         first_vertex = geometry.exterior.coords[first_index]
@@ -223,6 +228,9 @@ def cut_polygon(geometry):
         for geom in geometry_collection.geoms:
             #x,y = geom.exterior.xy
             #pyplot.plot(x,y)
+            #for interior in geometry.interiors:
+            #    x,y = interior.xy
+            #    pyplot.plot(x,y)
             #if less than 10% of the original geometry is cut, ignore the cut and try again at another position
             #this prevents infinit loops
             if geom.area < geometry.area * 0.1:
@@ -232,12 +240,12 @@ def cut_polygon(geometry):
         if geometry_count < 2:
             geometry = geometry_collection.geoms[0]
             max_segment_length = 1/(first_index+1)
-            #print(f"max_segment_length: {max_segment_length} - first_index: {first_index}")
+            #print(f"max_segment_length: {max_segment_length} - first_index: {first_index} - area: {geometry.area}")
             geometry = shapely.segmentize(geometry,max_segment_length)
             first_index += 1
             i = 0
             while (len(geometry.exterior.coords)-1) <= first_index:
-                #print(f"max_segment_length: {max_segment_length} - first_index: {first_index}")
+                #print(f"max_segment_length: {max_segment_length} - first_index: {first_index} - area: {geometry.area}")
                 max_segment_length = 1/(first_index+1+i)
                 geometry = shapely.segmentize(geometry,max_segment_length)
                 i += 1
@@ -297,7 +305,11 @@ def preprocess_object(processing_id,geometry_list,idx,row,gdf,bbox,target_size,b
         cut_geometries = []
         for geometry in geometry_list:
             if(len(list(geometry.interiors))):
-                cut_geometries.extend(cut_polygon(geometry))
+                for interior in geometry.interiors:
+                    if interior.area > 1e-6:
+                        cut_geometries.extend(cut_polygon(geometry))
+                    else:
+                        cut_geometries.append(create_geometry(geometry.exterior.coords, range(len(geometry.exterior.coords))))
             else:
                 #nothing to cut
                 cut_geometries.append(geometry)
@@ -421,8 +433,8 @@ def main():
 
     #Define what should be generated
     base_plate = True
-    buildings = True
-    paths = False
+    buildings = False
+    paths = True
     water = False
     green = False
 
