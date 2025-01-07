@@ -212,9 +212,6 @@ def cut_polygon(geometry):
     #we are doing this until something is cut
     while geometry_count < 2:
         geometry.simplify(0.001)
-        #If geometry is too small it takes ages to cut on the right place and we have no benefit. So we just remove the interior.
-        if geometry.area < 1e-6:
-            geometry = create_geometry( geometry.exterior.coords , range(len(geometry.exterior.coords )))
         #a line from the between first and middle vertex which should result in a more or less diagonal cut
         second_index = int(len(geometry.exterior.coords)/2)
         first_vertex = geometry.exterior.coords[first_index]
@@ -306,6 +303,7 @@ def preprocess_object(processing_id,geometry_list,idx,row,gdf,bbox,target_size,b
         for geometry in geometry_list:
             if(len(list(geometry.interiors))):
                 for interior in geometry.interiors:
+                    #If geometry is too small it takes ages to cut on the right place and we have no benefit. So we just remove the interior.
                     if interior.area > 1e-6:
                         cut_geometries.extend(cut_polygon(geometry))
                     else:
