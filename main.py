@@ -28,7 +28,7 @@ def fetch_location_data(bbox, location_type):
     if location_type == "buildings":
         gdf = ox.features_from_bbox( bbox , tags = {'building': True})
     if location_type == "paths":
-        gdf = ox.features_from_bbox( bbox , tags = {'highway': True})
+        gdf = ox.features_from_bbox( bbox , tags = {'highway': True,'man_made': ['pier']})
     if location_type == "water":
         gdf = ox.features_from_bbox( bbox , tags = {'natural': ['water','reef'],'landuse': ['basin','salt_pond'],'leisure': ['swimming_pool']})
     if location_type == "green":
@@ -221,10 +221,13 @@ def cut_polygon(geometry):
         geometry_count = len(geometry_collection.geoms)
         not_counting_geoms = 0
         for geom in geometry_collection.geoms:
+            #x,y = geom.exterior.xy
+            #pyplot.plot(x,y)
             #if less than 10% of the original geometry is cut, ignore the cut and try again at another position
             #this prevents infinit loops
             if geom.area < geometry.area * 0.1:
                 not_counting_geoms += 1
+        #pyplot.show()
         geometry_count -= not_counting_geoms
         if geometry_count < 2:
             geometry = geometry_collection.geoms[0]
@@ -262,12 +265,14 @@ def preprocess_objects_meta(gdf,bbox,target_size,base_size,default_height,height
         
         #Call the actual preprocessing function
         parameters.append([id,geometry_list,idx,row,gdf,bbox,target_size,base_size,default_height,height_scale])
-        
+            
 
         #object_list.extend(preprocess_object(id,geometry_list,idx,row,gdf,bbox,target_size,base_size,default_height,height_scale))
 
         id += 1
-    with multiprocessing.Pool(12) as p:
+
+    print("Using ", multiprocessing.cpu_count(), " CPU Cores")
+    with multiprocessing.Pool(multiprocessing.cpu_count()+1) as p:
         object_list = p.map(multi_run_wrapper,parameters)
     print(f"preprocessing done")
     return object_list
@@ -404,8 +409,8 @@ def save_to_stl(vertices, faces, filename):
 def main():
     target_size = 180
     base_thickness = 2
-    max_height_mm = 3
-    default_building_height=8
+    max_building_height_mm = 30
+    default_building_height= 8
     bbox = (4.87123, 52.35893, 4.93389, 52.38351)  #Amsterdam
     #bbox = (10.85891, 49.27478, 10.86771, 49.27973) #Suddersdorf
     #bbox = (-1.266515, 51.757883, -1.263503, 51.759302) #Oxford University (Polygon with Holes)
@@ -413,46 +418,43 @@ def main():
     #bbox = min Longitude , min Latitude , max Longitude , max Latitude 
 
     #Define what should be generated
-    base_plate = True
-    buildings = True
+    base_plate = False
+    buildings = False
     paths = True
-    water = True
-    green = True
-
-    #Test Stuff
-    print("Number of cpu : ", multiprocessing.cpu_count())
+    water = False
+    green = False
 
     #Generation of Base Plate
     if base_plate:
-        vertices, faces = prepare_mesh(False, bbox, target_size=target_size, max_height_mm=max_height_mm, default_height=default_building_height, base_thickness=base_thickness, base_generation=True, object_generation=False)
+        vertices, faces = prepare_mesh(False, bbox, target_size=target_size, max_height_mm=max_building_height_mm, default_height=default_building_height, base_thickness=base_thickness, base_generation=True, object_generation=False)
         save_to_stl(vertices, faces, 'export/standalone_base.stl')
         print(f"generation of base plate completed")
 
     #Generation of Buildings
     if buildings:
         gdf = fetch_location_data(bbox, "buildings")
-        vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
+        vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_building_height_mm, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/buildings_without_base.stl')
         print(f"generation of buildings completed")
 
     #Generation of Paths
     if paths:
         gdf = fetch_location_data(bbox, "paths")
-        vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm*0.25, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
+        vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=1, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/paths_without_base.stl')
         print(f"generation of paths completed")
 
     #Generation of Water
     if water:
         gdf = fetch_location_data(bbox, "water")
-        vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm*0.15, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
+        vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=0.5, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/water_without_base.stl')
         print(f"generation of water completed")
 
     #Generation of "Green Areas" like Forest and Meadow
     if green:
         gdf = fetch_location_data(bbox, "green")
-        vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_height_mm*0.2, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
+        vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=0.75, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/greens_without_base.stl')
         print(f"generation of greens completed")
 
