@@ -281,7 +281,7 @@ def preprocess_object(processing_id,geometry_list,idx,row,gdf,bbox,target_size,b
     object_list = []
 
     #Simple Progress Indicator
-    print(f"preprocessing id: {processing_id} of {len(list(gdf.iterrows()))-1}")
+    print(f"starting preprocessing of id: {processing_id} of {len(list(gdf.iterrows()))-1}")
     
     #Get Object height
     height = get_building_height(row, default_height) * height_scale
@@ -315,6 +315,7 @@ def preprocess_object(processing_id,geometry_list,idx,row,gdf,bbox,target_size,b
         #simplify object
         geometry.simplify(0.1)
         object = ([geometry,height])
+    print(f"finished preprocessing of id: {processing_id} of {len(list(gdf.iterrows()))-1}")
     return object
 
 def create_add_faces(base_index, exterior_coords,vertices,faces):
