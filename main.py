@@ -29,18 +29,19 @@ def main():
     #This highly depends on the astetics of the city/village you are trying to print. In Big Cities a value ~25 is mostly good. For villages values ~10 are good.
     max_building_height_mm = 10
     default_building_height= 9
+    default_citywall_height= 16
     #bbox = (4.87123, 52.35893, 4.93389, 52.38351)  #Amsterdam
-    bbox = (10.85891, 49.27478, 10.86771, 49.27973) #Suddersdorf
+    #bbox = (10.85891, 49.27478, 10.86771, 49.27973) #Suddersdorf
     #bbox = (-1.266515, 51.757883, -1.263503, 51.759302) #Oxford University (Polygon with Holes)
-    #bbox = (11.06375, 49.44759, 11.09048, 49.45976) #Nürnberg Zentrum
+    bbox = (11.06375, 49.44759, 11.09048, 49.45976) #Nürnberg Zentrum
     #bbox = min Longitude , min Latitude , max Longitude , max Latitude 
 
     #Define what should be generated
-    base_plate = True
+    base_plate = False
     buildings = True
-    paths = True
-    water = True
-    green = True
+    paths = False
+    water = False
+    green = False
 
     #Generation of Base Plate
     if base_plate:
@@ -51,7 +52,7 @@ def main():
     #Generation of Buildings
     if buildings:
         gdf = fetch_location_data(bbox, "buildings")
-        vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_building_height_mm, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True)
+        vertices, faces = prepare_mesh(gdf, bbox, target_size=target_size, max_height_mm=max_building_height_mm, default_height=default_building_height, base_thickness=base_thickness, base_generation=False, object_generation=True, default_citywall_height=default_citywall_height)
         save_to_stl(vertices, faces, 'export/buildings_without_base.stl')
         print(f"generation of buildings completed")
 

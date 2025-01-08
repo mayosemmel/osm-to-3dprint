@@ -14,18 +14,18 @@ from matplotlib import pyplot
 def fetch_location_data(bbox, location_type):
     # Fetch building footprints within the bounding box
     if location_type == "buildings":
-        gdf = ox.features_from_bbox( bbox , tags = {'building': True})
+        gdf = ox.features_from_bbox( bbox , tags = {'building': True, 'historic': ['citywalls']})
     if location_type == "paths":
-        gdf = ox.features_from_bbox( bbox , tags = {'highway': True,'man_made': ['pier']})
+        gdf = ox.features_from_bbox( bbox , tags = {'highway': True,' man_made': ['pier']})
     if location_type == "water":
-        gdf = ox.features_from_bbox( bbox , tags = {'natural': ['water','reef'],'landuse': ['basin','salt_pond'],'leisure': ['swimming_pool']})
+        gdf = ox.features_from_bbox( bbox , tags = {'natural': ['water','reef'],'landuse': ['basin','salt_pond'], 'leisure': ['swimming_pool']})
     if location_type == "green":
         gdf = ox.features_from_bbox( bbox , tags = {'landuse': ['forest','meadow','grass','allotments','flowerbed','orchard','plant_nursery','vineyard','cemetery','recreation_ground','village_green'],'leisure': ['garden','park','pitch'],'natural': ['grassland','scrub','wood']})
     return gdf
 
-def get_building_height(row, default_height=10):
+def get_building_height(row, default_height=10, default_citywall_height=17):
     # Check for various height attributes
-    height_attrs = ['height', 'building:height', 'building:levels']
+    height_attrs = ['height', 'building:height', 'building:levels', 'historic:city_walls']
     for attr in height_attrs:
         if attr in row:
             height = row[attr]
@@ -40,6 +40,8 @@ def get_building_height(row, default_height=10):
                     if attr == 'building:levels':
                         height = height_value * 3  # Assuming 3 meters per level
                         return height
+                    if attr == 'historic:citywalls':
+                        return default_citywall_height
                     return height_value
                 except ValueError:
                     continue
@@ -237,7 +239,7 @@ def cut_polygon(geometry):
 def multi_run_wrapper(args):
    return preprocess_object(*args)
 
-def preprocess_objects_meta(gdf,bbox,target_size,base_size,default_height,height_scale):
+def preprocess_objects_meta(gdf,bbox,target_size,base_size,default_height,default_citywall_height,height_scale):
     #Create a List of 3D Geometries (objects) out of the OSM Data
     #Geometries need to be preprocessed (Correct Type, No Holes, vertices in clockwise order, scaling, ...)
     id = 0
@@ -255,7 +257,7 @@ def preprocess_objects_meta(gdf,bbox,target_size,base_size,default_height,height
             continue
         
         #Call the actual preprocessing function
-        parameters.append([id,geometry_list,idx,row,gdf,bbox,target_size,base_size,default_height,height_scale])
+        parameters.append([id,geometry_list,idx,row,gdf,bbox,target_size,base_size,default_height,default_citywall_height,height_scale])
             
 
         #object_list.extend(preprocess_object(id,geometry_list,idx,row,gdf,bbox,target_size,base_size,default_height,height_scale))
@@ -268,14 +270,14 @@ def preprocess_objects_meta(gdf,bbox,target_size,base_size,default_height,height
     print(f"preprocessing done")
     return object_list
 
-def preprocess_object(processing_id,geometry_list,idx,row,gdf,bbox,target_size,base_size,default_height,height_scale):
+def preprocess_object(processing_id,geometry_list,idx,row,gdf,bbox,target_size,base_size,default_height,default_citywall_height,height_scale):
     object_list = []
 
     #Simple Progress Indicator
     print(f"starting preprocessing of id: {processing_id} of {len(list(gdf.iterrows()))-1}")
     
     #Get Object height
-    height = get_building_height(row, default_height) * height_scale
+    height = get_building_height(row, default_height, default_citywall_height) * height_scale
 
     # If Object is a string convert to polygon
     if isinstance(geometry_list[0], shapely.geometry.LineString):
@@ -329,7 +331,7 @@ def create_add_faces(base_index, exterior_coords,vertices,faces):
 
     return faces
 
-def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10, base_thickness=2, base_generation=True, object_generation=True, scaling_factor=1.2):
+def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10, default_citywall_height=17, base_thickness=2, base_generation=True, object_generation=True, scaling_factor=1.2):
     # Define the base size as a percentage larger than the target area
     base_size = target_size * scaling_factor    
 
@@ -351,7 +353,7 @@ def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10
         max_building_height = gdf.apply(lambda row: get_building_height(row, default_height), axis=1).max()
         height_scale = max_height_mm / max_building_height
 
-        preprocessed_objects = preprocess_objects_meta(gdf,bbox,target_size,base_size,default_height,height_scale)
+        preprocessed_objects = preprocess_objects_meta(gdf,bbox,target_size,base_size,default_height,default_citywall_height,height_scale)
         id=0
         for object in preprocessed_objects:
             #Simple Progress Indicator
