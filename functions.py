@@ -235,10 +235,6 @@ def preprocess_objects_meta(gdf,bbox,target_size,base_size,default_height,defaul
         
         #Create a List with all parameters for multiprocessing
         parameters.append([id,geometry_list,idx,row,gdf,bbox,target_size,base_size,default_height,default_citywall_height,height_scale])
-            
-
-        #object_list.extend(preprocess_object(id,geometry_list,idx,row,gdf,bbox,target_size,base_size,default_height,height_scale))
-
         id += 1
     #Call Preprocessing Function in Multiprocessing
     #Use one more Core than existent for proper 100% utilization
@@ -264,7 +260,6 @@ def preprocess_object(args):
         geometry_list[0] = shapely.buffer(geometry_list[0], 0.00002)
 
     
-
     #If Polygon has holes, remove them by splitting it into multiple Polygons
     interiors = len(list(geometry_list[0].interiors))
     while interiors > 0:
@@ -274,9 +269,10 @@ def preprocess_object(args):
             if(len(list(geometry.interiors))):
                 for interior in geometry.interiors:
                     #If geometry is too small it takes ages to cut on the right place and we have no benefit. So we just remove the interior.
-                    if interior.area > 1e-6:
+                    if shapely.Polygon(interior.coords).area > 1e-12:
                         cut_geometries.extend(cut_polygon(geometry))
                     else:
+                        print(f"Interior with area {shapely.Polygon(interior.coords).area} was removed. If this reduces quality try adjusting tolerance level.")
                         cut_geometries.append(create_geometry(geometry.exterior.coords, range(len(geometry.exterior.coords))))
             else:
                 #nothing to cut
@@ -294,10 +290,10 @@ def preprocess_object(args):
         geometry = scale_polygon(geometry.exterior.coords,bbox,target_size,base_size)
         #simplify object
         geometry.simplify(0.1)
-        object = ([geometry,height])
+        object_list.append([geometry,height])
 
     print(f"finished preprocessing of id: {processing_id} of {len(list(gdf.iterrows()))-1}")
-    return object
+    return object_list
 
 def create_add_faces(base_index, exterior_coords,vertices,faces, id=0):
     # Create side faces
@@ -341,7 +337,11 @@ def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10
         max_building_height = gdf.apply(lambda row: get_building_height(row, default_height), axis=1).max()
         height_scale = max_height_mm / max_building_height
 
-        preprocessed_objects = preprocess_objects_meta(gdf,bbox,target_size,base_size,default_height,default_citywall_height,height_scale)
+        #objects are in a two deep and asymetric list, we need them in one symetric list to iterate through them
+        preprocessed_objects = []
+        for meta_object in preprocess_objects_meta(gdf,bbox,target_size,base_size,default_height,default_citywall_height,height_scale):
+            for object in meta_object:
+                preprocessed_objects.append(object)
         id=0
         for object in preprocessed_objects:
             #Simple Progress Indicator

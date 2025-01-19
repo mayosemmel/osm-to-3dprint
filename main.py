@@ -35,8 +35,8 @@ def main():
     default_building_height= 9
     default_citywall_height= 16
     #bbox = (4.87123, 52.35893, 4.93389, 52.38351)  #Amsterdam
-    bbox = (10.85891, 49.27478, 10.86771, 49.27973) #Suddersdorf
-    #bbox = (-1.266515, 51.757883, -1.263503, 51.759302) #Oxford University (Polygon with Holes)
+    #bbox = (10.85891, 49.27478, 10.86771, 49.27973) #Suddersdorf
+    bbox = (-1.266515, 51.757883, -1.263503, 51.759302) #Oxford University (Polygon with Holes)
     #bbox = (11.06375, 49.44759, 11.09048, 49.45976) #Nürnberg Zentrum
     #bbox = (11.07375, 49.40804, 11.11181, 49.42298) #Rangierbahnhof
     #bbox = (10.58769, 49.56984, 10.63133, 49.58768) # Neustadt Aisch
