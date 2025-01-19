@@ -16,7 +16,7 @@ def fetch_location_data(bbox, location_type):
     if location_type == "buildings":
         gdf = ox.features_from_bbox( bbox , tags = {'building': True, 'historic': ['citywalls']})
     if location_type == "paths":
-        gdf = ox.features_from_bbox( bbox , tags = {'highway': True,' man_made': ['pier']})
+        gdf = ox.features_from_bbox( bbox , tags = {'highway': True,' man_made': ['pier'], 'railway': True})
     if location_type == "water":
         gdf = ox.features_from_bbox( bbox , tags = {'natural': ['water','reef'],'landuse': ['basin','salt_pond'], 'leisure': ['swimming_pool']})
     if location_type == "green":
@@ -47,17 +47,17 @@ def get_building_height(row, default_height=10, default_citywall_height=17):
                     continue
     return default_height
 
-def create_solid_base(base_size, base_thickness=2):
+def create_solid_base(base_size, base_thickness=2, offset=0):
     # Define vertices for the base (solid block)
     base_vertices = [
-        (0, 0, 0),  # Bottom face
-        (base_size, 0, 0),
-        (base_size, base_size, 0),
-        (0, base_size, 0),
-        (0, 0, base_thickness),  # Top face (where buildings will sit)
-        (base_size, 0, base_thickness),
-        (base_size, base_size, base_thickness),
-        (0, base_size, base_thickness)
+        (offset + 0, offset + 0, 0),  # Bottom face
+        (offset + base_size, offset + 0, 0),
+        (offset + base_size, offset + base_size, 0),
+        (offset + 0, offset + base_size, 0),
+        (offset + 0, offset + 0, base_thickness),  # Top face (where buildings will sit)
+        (offset + base_size, offset + 0, base_thickness),
+        (offset + base_size, offset + base_size, base_thickness),
+        (offset + 0, offset + base_size, base_thickness)
     ]
 
     # Define faces for the base
@@ -72,26 +72,11 @@ def create_solid_base(base_size, base_thickness=2):
 
     return base_vertices, base_faces
 
-def check_if_outside_overlapping_or_empty(geometry, base_geometry):
-    if isinstance(geometry, shapely.geometry.Polygon) and isinstance(base_geometry, shapely.geometry.Polygon):
-        if geometry.area <= 0:
-            return True
-        difference = shapely.difference(geometry, base_geometry)
-    else:
-        raise Exception("Error, Shapes are no Polygons")
-    if isinstance(difference, shapely.geometry.Polygon):
-        if difference.area > 0:
-            return True
-        else:
-            return False
-    else:
-        raise Exception("Error, Shapes invalid")
-
 def create_triangle(vertices,side1,side2,side3):
     triangle_coords = ((vertices[side1][0],vertices[side1][1]),(vertices[side2][0],vertices[side2][1]),(vertices[side3][0],vertices[side3][1]))
     return shapely.Polygon(triangle_coords)
 
-def create_planar_face(face_indicies, vertices):
+def create_planar_face(face_indicies, vertices, id=0):
     faces = []
     triangles_xy = []
 
@@ -100,10 +85,10 @@ def create_planar_face(face_indicies, vertices):
     for i in range(len(face_indicies)):
         polygon_input += os.linesep + str(int(vertices[face_indicies[i]][0]*1000000000)) + " " + str(int(vertices[face_indicies[i]][1]*1000000000))
     cwd = os.path.dirname(os.path.realpath(__file__))
-    polygon_input_file = open("cache/polygon_input.txt", "w")
+    polygon_input_file = open("cache/polygon_input_" + str(id) + ".txt", "w")
     polygon_input_file.write(polygon_input)
     polygon_input_file.close()
-    output = subprocess.check_output(["./a.out", "cache/polygon_input.txt"], cwd=cwd, universal_newlines=True )
+    output = subprocess.check_output(["./a.out", "cache/polygon_input_" + str(id) + ".txt"], cwd=cwd, universal_newlines=True )
     output = output.replace("(","").replace(")","").replace(",","").split()
     for i in range(2):
         del output[0]
@@ -211,11 +196,6 @@ def cut_polygon(geometry):
         geometry_count = len(geometry_collection.geoms)
         not_counting_geoms = 0
         for geom in geometry_collection.geoms:
-            #x,y = geom.exterior.xy
-            #pyplot.plot(x,y)
-            #for interior in geometry.interiors:
-            #    x,y = interior.xy
-            #    pyplot.plot(x,y)
             #if less than 10% of the original geometry is cut, ignore the cut and try again at another position
             #this prevents infinit loops
             if geom.area < geometry.area * 0.1:
@@ -236,9 +216,6 @@ def cut_polygon(geometry):
                 i += 1
     return geometry_collection.geoms
 
-def multi_run_wrapper(args):
-   return preprocess_object(*args)
-
 def preprocess_objects_meta(gdf,bbox,target_size,base_size,default_height,default_citywall_height,height_scale):
     #Create a List of 3D Geometries (objects) out of the OSM Data
     #Geometries need to be preprocessed (Correct Type, No Holes, vertices in clockwise order, scaling, ...)
@@ -256,21 +233,24 @@ def preprocess_objects_meta(gdf,bbox,target_size,base_size,default_height,defaul
             id += 1
             continue
         
-        #Call the actual preprocessing function
+        #Create a List with all parameters for multiprocessing
         parameters.append([id,geometry_list,idx,row,gdf,bbox,target_size,base_size,default_height,default_citywall_height,height_scale])
             
 
         #object_list.extend(preprocess_object(id,geometry_list,idx,row,gdf,bbox,target_size,base_size,default_height,height_scale))
 
         id += 1
-
+    #Call Preprocessing Function in Multiprocessing
+    #Use one more Core than existent for proper 100% utilization
     print("Using ", multiprocessing.cpu_count(), " CPU Cores")
     with multiprocessing.Pool(multiprocessing.cpu_count()+1) as p:
-        object_list = p.map(multi_run_wrapper,parameters)
+    #with multiprocessing.Pool(1) as p:
+        object_list = p.map(preprocess_object,parameters)
     print(f"preprocessing done")
     return object_list
 
-def preprocess_object(processing_id,geometry_list,idx,row,gdf,bbox,target_size,base_size,default_height,default_citywall_height,height_scale):
+def preprocess_object(args):
+    processing_id,geometry_list,idx,row,gdf,bbox,target_size,base_size,default_height,default_citywall_height,height_scale = args
     object_list = []
 
     #Simple Progress Indicator
@@ -282,6 +262,8 @@ def preprocess_object(processing_id,geometry_list,idx,row,gdf,bbox,target_size,b
     # If Object is a string convert to polygon
     if isinstance(geometry_list[0], shapely.geometry.LineString):
         geometry_list[0] = shapely.buffer(geometry_list[0], 0.00002)
+
+    
 
     #If Polygon has holes, remove them by splitting it into multiple Polygons
     interiors = len(list(geometry_list[0].interiors))
@@ -317,17 +299,17 @@ def preprocess_object(processing_id,geometry_list,idx,row,gdf,bbox,target_size,b
     print(f"finished preprocessing of id: {processing_id} of {len(list(gdf.iterrows()))-1}")
     return object
 
-def create_add_faces(base_index, exterior_coords,vertices,faces):
+def create_add_faces(base_index, exterior_coords,vertices,faces, id=0):
     # Create side faces
     faces.extend(create_side_faces(base_index, len(exterior_coords)))
 
     # Create top and bottom face
     top_face_indices = [base_index + 2 * i + 1 for i in range(len(exterior_coords) - 1)]
-    faces.extend(create_planar_face(top_face_indices,vertices))
+    faces.extend(create_planar_face(top_face_indices,vertices, id))
 
     # Create bottom face
     bottom_face_indices = [base_index + 2 * i for i in range(len(exterior_coords) - 1)]
-    faces.extend(create_planar_face(bottom_face_indices,vertices))
+    faces.extend(create_planar_face(bottom_face_indices,vertices, id))
 
     return faces
 
@@ -339,13 +321,19 @@ def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10
     faces = []
 
 
-    # Generate solid base
-    base_vertices, base_faces = create_solid_base(base_size, base_thickness)
-    # only half array will be used since we only need top OR bottom for the 2D object.
-    base_geometry = create_geometry(base_vertices,range(int(len(base_vertices)/2)))
+    
     if base_generation == True:
+        # Generate solid base
+        base_vertices, base_faces = create_solid_base(base_size, base_thickness)
+        # only half array will be used since we only need top OR bottom for the 2D object.
+        base_geometry = create_geometry(base_vertices,range(int(len(base_vertices)/2)))
         vertices.extend(base_vertices)
         faces.extend(base_faces)
+    else:
+        # Generate solid base
+        base_vertices, base_faces = create_solid_base(target_size, base_thickness, ((scaling_factor - 1) / 2) * target_size)
+        # only half array will be used since we only need top OR bottom for the 2D object.
+        base_geometry = create_geometry(base_vertices,range(int(len(base_vertices)/2)))
 
     
     if object_generation == True:
@@ -372,14 +360,14 @@ def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10
                         #Get Base Index (Before adding new vertices of this object)
                         base_index = len(vertices)
                         vertices.extend(create_vertices_list(exterior_coords, base_thickness, height))
-                        faces = create_add_faces(base_index, exterior_coords, vertices, faces)
+                        faces = create_add_faces(base_index, exterior_coords, vertices, faces, id)
                     id += 1
                 else:
                     exterior_coords = list(intersection.exterior.coords)
                     #Get Base Index (Before adding new vertices of this object)
                     base_index = len(vertices)
                     vertices.extend(create_vertices_list(exterior_coords, base_thickness, height))
-                    faces = create_add_faces(base_index, exterior_coords, vertices, faces)
+                    faces = create_add_faces(base_index, exterior_coords, vertices, faces, id)
                     id += 1
             else:
                 id += 1
