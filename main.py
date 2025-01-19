@@ -20,11 +20,15 @@ from matplotlib import pyplot
 # Priority of Layers -> Water cuts out in Green, Paths cut out Water and Green
 # Performance!! Multithreading is working, but still it is quite slow
 # maybe implement triangulation by myself?
+# What about a bbox which is not a square? -> aspect ratio
 
 
 def main():
+    #size of print in mm excluding "frame" overhang
     target_size = 180
+    #Thickness of Base Plate in mm
     base_thickness = 2
+    #everything bigger than one will create a "frame" around the actual landscape
     scaling_factor = 1.1
     #This highly depends on the astetics of the city/village you are trying to print. In Big Cities a value ~25 is mostly good. For villages values ~10 are good.
     max_building_height_mm = 10
