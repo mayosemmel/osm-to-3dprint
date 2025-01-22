@@ -234,7 +234,7 @@ def preprocess_objects_meta(gdf,bbox,target_size,base_size,default_height,defaul
             continue
         
         #Create a List with all parameters for multiprocessing
-        parameters.append([id,geometry_list,idx,row,gdf,bbox,target_size,base_size,default_height,default_citywall_height,height_scale])
+        parameters.append([id,geometry_list,row,gdf,bbox,target_size,base_size,default_height,default_citywall_height,height_scale])
         id += 1
     #Call Preprocessing Function in Multiprocessing
     #Use one more Core than existent for proper 100% utilization
@@ -242,11 +242,16 @@ def preprocess_objects_meta(gdf,bbox,target_size,base_size,default_height,defaul
     with multiprocessing.Pool(multiprocessing.cpu_count()+1) as p:
     #with multiprocessing.Pool(1) as p:
         object_list = p.map(preprocess_object,parameters)
+    
+    preprocessed_objects = []
+    for meta_object in object_list:
+            for object in meta_object:
+                preprocessed_objects.append(object)
     print(f"preprocessing done")
-    return object_list
+    return preprocessed_objects
 
 def preprocess_object(args):
-    processing_id,geometry_list,idx,row,gdf,bbox,target_size,base_size,default_height,default_citywall_height,height_scale = args
+    processing_id,geometry_list,row,gdf,bbox,target_size,base_size,default_height,default_citywall_height,height_scale = args
     object_list = []
 
     #Simple Progress Indicator
@@ -309,14 +314,9 @@ def create_add_faces(base_index, exterior_coords,vertices,faces, id=0):
 
     return faces
 
-def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10, default_citywall_height=17, base_thickness=2, base_generation=True, object_generation=True, scaling_factor=1.2):
-    # Define the base size as a percentage larger than the target area
-    base_size = target_size * scaling_factor    
-
+def prepare_mesh(preprocessed_objects, target_size, base_size, base_thickness=2, base_generation=True, object_generation=True, scaling_factor=1.2):
     vertices = []
     faces = []
-
-
     
     if base_generation == True:
         # Generate solid base
@@ -333,15 +333,7 @@ def prepare_mesh(gdf, bbox, target_size=180, max_height_mm=40, default_height=10
 
     
     if object_generation == True:
-        # Calculate the maximum building height
-        max_building_height = gdf.apply(lambda row: get_building_height(row, default_height), axis=1).max()
-        height_scale = max_height_mm / max_building_height
-
-        #objects are in a two deep and asymetric list, we need them in one symetric list to iterate through them
-        preprocessed_objects = []
-        for meta_object in preprocess_objects_meta(gdf,bbox,target_size,base_size,default_height,default_citywall_height,height_scale):
-            for object in meta_object:
-                preprocessed_objects.append(object)
+        
         id=0
         for object in preprocessed_objects:
             #Simple Progress Indicator
