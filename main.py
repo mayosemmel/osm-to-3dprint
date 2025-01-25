@@ -21,7 +21,7 @@ from matplotlib import pyplot
 # Performance!! Multithreading is working, but still it is quite slow
 # maybe implement triangulation by myself?
 # What about a bbox which is not a square? -> aspect ratio
-# calculate base size only on one place
+
 
 
 def main():
@@ -34,7 +34,6 @@ def main():
     #This highly depends on the astetics of the city/village you are trying to print. In Big Cities a value ~25 is mostly good. For villages values ~10 are good.
     max_building_height_mm = 10
     default_building_height = 9
-    default_citywall_height = 16
     path_height = 1
     water_height = 0.5
     green_height = 0.75
@@ -55,49 +54,75 @@ def main():
     water = True
     green = True
     
+    #Preparation of 2D Object with height as metadata for later processing
+
+    #Generation of Buildings
+    if buildings:
+        gdf = fetch_location_data(bbox, "buildings")
+        object_list_buildings = generate_object_list(gdf,default_building_height,max_building_height_mm)
+    
+    #Generation of Paths
+    if paths:
+        gdf = fetch_location_data(bbox, "paths")
+        object_list_paths = generate_object_list(gdf,default_building_height,path_height)
+    
+    #Generation of Water
+    if water:
+        gdf = fetch_location_data(bbox, "water")
+        object_list_water = generate_object_list(gdf,default_building_height,water_height)
+        
+
+    #Generation of "Green Areas" like Forest and Meadow
+    if green:
+        gdf = fetch_location_data(bbox, "green")
+        object_list_greens = generate_object_list(gdf,default_building_height,water_height)
+        
+    
+    #If water is in a green area (like a river or a fointan) or a green is fully enclosed by water (an island) we need to cut the other parts. Otherwise fountains get lost in the end-result.
+    #Since we need to implement this cutting algorythm anyways we also cut buildings and paths out of the other objects to prevent overlapping and have a nicer print result.
+    #Order of objects from top to bottom:
+    # buildings
+    # paths
+    # water (except the green is fully enclosed by water)
+    # green
+
+    #for easy developement we start with water and green.
+    #cut_object_categories(preprocessed_water,preprocessed_greens)
+
+
+    #Generation of 3D Mesh out of 2D Shapes with height
+    
     #Generation of Base Plate
     if base_plate:
-        vertices, faces = prepare_mesh(False,target_size=target_size, base_size=target_size*scaling_factor, base_thickness=base_thickness, base_generation=True, object_generation=False, scaling_factor=scaling_factor)
+        vertices, faces = prepare_3d_mesh(False,target_size, scaling_factor, base_thickness, base_generation=True, object_generation=False)
         save_to_stl(vertices, faces, 'export/standalone_base.stl')
         print(f"generation of base plate completed")
 
     #Generation of Buildings
     if buildings:
-        gdf = fetch_location_data(bbox, "buildings")
-
-        # Calculate the maximum object height
-        max_building_height = gdf.apply(lambda row: get_building_height(row, default_building_height), axis=1).max()
-        height_scale = max_building_height_mm / max_building_height
-        
-        preprocessed_objects = preprocess_objects_meta(gdf,bbox,target_size,base_size=target_size*scaling_factor,default_height=default_building_height,default_citywall_height=default_citywall_height,height_scale=height_scale)
-        vertices, faces = prepare_mesh(preprocessed_objects, target_size=target_size, base_size=base_size, base_generation=False, object_generation=True, scaling_factor=scaling_factor)
+        preprocessed_buildings = preprocess_objects(object_list_buildings,bbox,target_size,scaling_factor)
+        vertices, faces = prepare_3d_mesh(preprocessed_buildings, target_size, scaling_factor, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/buildings_without_base.stl')
         print(f"generation of buildings completed")
 
     #Generation of Paths
     if paths:
-        height_scale = path_height / default_building_height
-        gdf = fetch_location_data(bbox, "paths")
-        preprocessed_objects = preprocess_objects_meta(gdf,bbox,target_size,base_size=target_size*scaling_factor,default_height=default_building_height,default_citywall_height=default_citywall_height,height_scale=height_scale)
-        vertices, faces = prepare_mesh(preprocessed_objects, target_size=target_size, base_size=base_size, base_generation=False, object_generation=True, scaling_factor=scaling_factor)
+        preprocessed_paths = preprocess_objects(object_list_paths,bbox,target_size,scaling_factor)
+        vertices, faces = prepare_3d_mesh(preprocessed_paths, target_size, scaling_factor, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/paths_without_base.stl')
         print(f"generation of paths completed")
 
     #Generation of Water
     if water:
-        height_scale = water_height / default_building_height
-        gdf = fetch_location_data(bbox, "water")
-        preprocessed_objects = preprocess_objects_meta(gdf,bbox,target_size,base_size=target_size*scaling_factor,default_height=default_building_height,default_citywall_height=default_citywall_height,height_scale=height_scale)
-        vertices, faces = prepare_mesh(preprocessed_objects, target_size=target_size, base_size=base_size, base_generation=False, object_generation=True, scaling_factor=scaling_factor)
+        preprocessed_water = preprocess_objects(object_list_water,bbox,target_size,scaling_factor)
+        vertices, faces = prepare_3d_mesh(preprocessed_water, target_size, scaling_factor, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/water_without_base.stl')
         print(f"generation of water completed")
 
     #Generation of "Green Areas" like Forest and Meadow
     if green:
-        height_scale = green_height / default_building_height
-        gdf = fetch_location_data(bbox, "green")
-        preprocessed_objects = preprocess_objects_meta(gdf,bbox,target_size,base_size=target_size*scaling_factor,default_height=default_building_height,default_citywall_height=default_citywall_height,height_scale=height_scale)
-        vertices, faces = prepare_mesh(preprocessed_objects, target_size=target_size, base_size=base_size, base_generation=False, object_generation=True, scaling_factor=scaling_factor)
+        preprocessed_greens = preprocess_objects(object_list_greens,bbox,target_size,scaling_factor)
+        vertices, faces = prepare_3d_mesh(preprocessed_greens, target_size, scaling_factor, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/greens_without_base.stl')
         print(f"generation of greens completed")
 

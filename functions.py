@@ -23,7 +23,8 @@ def fetch_location_data(bbox, location_type):
         gdf = ox.features_from_bbox( bbox , tags = {'landuse': ['forest','meadow','grass','allotments','flowerbed','orchard','plant_nursery','vineyard','cemetery','recreation_ground','village_green'],'leisure': ['garden','park','pitch'],'natural': ['grassland','scrub','wood']})
     return gdf
 
-def get_building_height(row, default_height=10, default_citywall_height=17):
+def get_building_height(row, default_height=10):
+    default_citywall_height = default_height*1.7
     # Check for various height attributes
     height_attrs = ['height', 'building:height', 'building:levels', 'historic:city_walls']
     for attr in height_attrs:
@@ -216,55 +217,60 @@ def cut_polygon(geometry):
                 i += 1
     return geometry_collection.geoms
 
-def preprocess_objects_meta(gdf,bbox,target_size,base_size,default_height,default_citywall_height,height_scale):
+def generate_object_list(gdf,default_height,max_height_mm):
     #Create a List of 3D Geometries (objects) out of the OSM Data
     #Geometries need to be preprocessed (Correct Type, No Holes, vertices in clockwise order, scaling, ...)
-    id = 0
+    
     object_list = []
-    parameters = []
-    for idx, row in gdf.iterrows():
-        #Get the geometry out of the raw data
-        #We need a list becaue it might be the case that we need to split the polygon into multiple in later steps
-        geometry_list = ([row['geometry']])
 
+    # Calculate the maximum object height
+    max_building_height = gdf.apply(lambda row: get_building_height(row, default_height), axis=1).max()
+    height_scale = max_height_mm / max_building_height
+
+    for idx, row in gdf.iterrows():
+        #We will have a geometry in the the first place [0] and the height in the second place [1]
+        object = []
         #Check if we can process the object. Points and other stuff are not implemented (yet).
-        if not (isinstance(geometry_list[0], shapely.geometry.Polygon) or isinstance(geometry_list[0], shapely.geometry.LineString)):
+        if not (isinstance(row['geometry'], shapely.geometry.Polygon) or isinstance(row['geometry'], shapely.geometry.LineString)):
             print(f"Object of Type {idx[0]} with id {idx[1]} is not implemented (yet).")
-            id += 1
             continue
+
+        #Get the geometry out of the raw data
+        object.append(row['geometry'])
+        # If Object is a string convert to polygon
+        if isinstance(object[0], shapely.geometry.LineString):
+            object[0] = shapely.buffer(object[0], 0.00002)
         
+        #Get Object height
+        object.append(get_building_height(row, default_height) * height_scale)
+
+        object_list.append(object)
+    return(object_list)
+        
+def preprocess_objects(object_list,bbox,target_size,scaling_factor):
+    parameters = []
+    base_size = target_size*scaling_factor
+    for object in object_list:
         #Create a List with all parameters for multiprocessing
-        parameters.append([id,geometry_list,row,gdf,bbox,target_size,base_size,default_height,default_citywall_height,height_scale])
-        id += 1
+        parameters.append([object,bbox,target_size,base_size])
     #Call Preprocessing Function in Multiprocessing
-    #Use one more Core than existent for proper 100% utilization
-    print("Using ", multiprocessing.cpu_count(), " CPU Cores")
-    with multiprocessing.Pool(multiprocessing.cpu_count()+1) as p:
+    print("starting preprocessing with", multiprocessing.cpu_count(), "CPU Cores")
+    with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
     #with multiprocessing.Pool(1) as p:
-        object_list = p.map(preprocess_object,parameters)
+        meta_object_list = p.map(cut_order_scale,parameters)
     
     preprocessed_objects = []
-    for meta_object in object_list:
+    for meta_object in meta_object_list:
             for object in meta_object:
                 preprocessed_objects.append(object)
     print(f"preprocessing done")
     return preprocessed_objects
 
-def preprocess_object(args):
-    processing_id,geometry_list,row,gdf,bbox,target_size,base_size,default_height,default_citywall_height,height_scale = args
-    object_list = []
+def cut_order_scale(args):
+    object,bbox,target_size,base_size = args
+    processed_objects = []
+    geometry_list=([object[0]])
 
-    #Simple Progress Indicator
-    print(f"starting preprocessing of id: {processing_id} of {len(list(gdf.iterrows()))-1}")
-    
-    #Get Object height
-    height = get_building_height(row, default_height, default_citywall_height) * height_scale
-
-    # If Object is a string convert to polygon
-    if isinstance(geometry_list[0], shapely.geometry.LineString):
-        geometry_list[0] = shapely.buffer(geometry_list[0], 0.00002)
-
-    
     #If Polygon has holes, remove them by splitting it into multiple Polygons
     interiors = len(list(geometry_list[0].interiors))
     while interiors > 0:
@@ -295,10 +301,9 @@ def preprocess_object(args):
         geometry = scale_polygon(geometry.exterior.coords,bbox,target_size,base_size)
         #simplify object
         geometry.simplify(0.1)
-        object_list.append([geometry,height])
+        processed_objects.append([geometry,object[1]])
 
-    print(f"finished preprocessing of id: {processing_id} of {len(list(gdf.iterrows()))-1}")
-    return object_list
+    return processed_objects
 
 def create_add_faces(base_index, exterior_coords,vertices,faces, id=0):
     # Create side faces
@@ -314,10 +319,11 @@ def create_add_faces(base_index, exterior_coords,vertices,faces, id=0):
 
     return faces
 
-def prepare_mesh(preprocessed_objects, target_size, base_size, base_thickness=2, base_generation=True, object_generation=True, scaling_factor=1.2):
+def prepare_3d_mesh(preprocessed_objects, target_size, scaling_factor, base_thickness=2, base_generation=True, object_generation=True):
     vertices = []
     faces = []
-    
+    base_size = target_size * scaling_factor
+
     if base_generation == True:
         # Generate solid base
         base_vertices, base_faces = create_solid_base(base_size, base_thickness)
@@ -334,10 +340,8 @@ def prepare_mesh(preprocessed_objects, target_size, base_size, base_thickness=2,
     
     if object_generation == True:
         
-        id=0
         for object in preprocessed_objects:
             #Simple Progress Indicator
-            print(f"processing id: {id} of {len(preprocessed_objects)-1}")
             exterior_coords = list(object[0].exterior.coords)
             height = object[1]
             #Remove any overhangs over the base plate. This is required since some objects start within the bbox but end outside of it.
@@ -352,17 +356,14 @@ def prepare_mesh(preprocessed_objects, target_size, base_size, base_thickness=2,
                         #Get Base Index (Before adding new vertices of this object)
                         base_index = len(vertices)
                         vertices.extend(create_vertices_list(exterior_coords, base_thickness, height))
-                        faces = create_add_faces(base_index, exterior_coords, vertices, faces, id)
-                    id += 1
+                        faces = create_add_faces(base_index, exterior_coords, vertices, faces)
                 else:
                     exterior_coords = list(intersection.exterior.coords)
                     #Get Base Index (Before adding new vertices of this object)
                     base_index = len(vertices)
                     vertices.extend(create_vertices_list(exterior_coords, base_thickness, height))
-                    faces = create_add_faces(base_index, exterior_coords, vertices, faces, id)
-                    id += 1
+                    faces = create_add_faces(base_index, exterior_coords, vertices, faces)
             else:
-                id += 1
                 continue
 
     vertices = np.array(vertices)
@@ -385,3 +386,8 @@ def save_to_stl(vertices, faces, filename):
     #pyplot.show()
 
     mesh_data.save(filename)
+
+
+def cut_object_categories(preprocessed_water,preprocessed_greens):
+    #The first object will be the upper layer
+    print("developement not finished")
