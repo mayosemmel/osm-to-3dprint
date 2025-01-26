@@ -17,7 +17,6 @@ from matplotlib import pyplot
 ### TODO ###
 #
 # Width of Paths
-# Priority of Layers -> Water cuts out in Green, Paths cut out Water and Green
 # Performance!! Multithreading is working, but still it is quite slow
 # maybe implement triangulation by myself?
 # What about a bbox which is not a square? -> aspect ratio
@@ -34,16 +33,15 @@ def main():
     #This highly depends on the astetics of the city/village you are trying to print. In Big Cities a value ~25 is mostly good. For villages values ~10 are good.
     max_building_height_mm = 10
     default_building_height = 9
-    path_height = 1
-    water_height = 0.5
-    green_height = 0.75
-    base_size = target_size * scaling_factor
+    path_height = 0.6
+    water_height = 0.4
+    green_height = 0.6
 
     #bbox = (4.87123, 52.35893, 4.93389, 52.38351)  #Amsterdam
     #bbox = (10.85891, 49.27478, 10.86771, 49.27973) #Suddersdorf
-    bbox = (-1.266515, 51.757883, -1.263503, 51.759302) #Oxford University (Polygon with Holes)
-    #bbox = (11.06375, 49.44759, 11.09048, 49.45976) #Nürnberg Zentrum
-    #bbox = (11.07375, 49.40804, 11.11181, 49.42298) #Rangierbahnhof
+    #bbox = (-1.266515, 51.757883, -1.263503, 51.759302) #Oxford University (Polygon with Holes)
+    bbox = (11.06375, 49.44759, 11.09048, 49.45976) #Nürnberg Zentrum
+    #bbox = (11.07375, 49.40804, 11.11181, 49.42298) #Nürnberg Rangierbahnhof
     #bbox = (10.58769, 49.56984, 10.63133, 49.58768) # Neustadt Aisch
     #bbox = min Longitude , min Latitude , max Longitude , max Latitude 
 
@@ -60,38 +58,39 @@ def main():
     if buildings:
         gdf = fetch_location_data(bbox, "buildings")
         object_list_buildings = generate_object_list(gdf,default_building_height,max_building_height_mm)
+    else:
+        #for further processing we need some "empty" Polygon as dummy data
+        object_list_buildings = ([[shapely.Polygon(),0]])
     
     #Generation of Paths
     if paths:
         gdf = fetch_location_data(bbox, "paths")
         object_list_paths = generate_object_list(gdf,default_building_height,path_height)
+    else:
+        #for further processing we need some "empty" Polygon as dummy data
+        object_list_paths = ([[shapely.Polygon(),0]])
     
     #Generation of Water
     if water:
         gdf = fetch_location_data(bbox, "water")
         object_list_water = generate_object_list(gdf,default_building_height,water_height)
-        
-
+    else:
+        #for further processing we need some "empty" Polygon as dummy data
+        object_list_water = ([[shapely.Polygon(),0]])
+    
     #Generation of "Green Areas" like Forest and Meadow
     if green:
         gdf = fetch_location_data(bbox, "green")
-        object_list_greens = generate_object_list(gdf,default_building_height,water_height)
-        
-    
+        object_list_greens = generate_object_list(gdf,default_building_height,green_height)
+    else:
+        #for further processing we need some "empty" Polygon as dummy data
+        object_list_greens = ([[shapely.Polygon(),0]])
+
     #If water is in a green area (like a river or a fointan) or a green is fully enclosed by water (an island) we need to cut the other parts. Otherwise fountains get lost in the end-result.
     #Since we need to implement this cutting algorythm anyways we also cut buildings and paths out of the other objects to prevent overlapping and have a nicer print result.
-    #Order of objects from top to bottom:
-    # buildings
-    # paths
-    # water (except the green is fully enclosed by water)
-    # green
+    print(f"starting to cut the layer categories with each other")
+    object_list_buildings,object_list_paths,object_list_water,object_list_greens = cut_all_categories(object_list_buildings,object_list_paths,object_list_water,object_list_greens)
 
-    #for easy developement we start with water and green.
-    #cut_object_categories(preprocessed_water,preprocessed_greens)
-
-
-    #Generation of 3D Mesh out of 2D Shapes with height
-    
     #Generation of Base Plate
     if base_plate:
         vertices, faces = prepare_3d_mesh(False,target_size, scaling_factor, base_thickness, base_generation=True, object_generation=False)
@@ -99,28 +98,28 @@ def main():
         print(f"generation of base plate completed")
 
     #Generation of Buildings
-    if buildings:
+    if buildings and len(object_list_buildings) > 0:
         preprocessed_buildings = preprocess_objects(object_list_buildings,bbox,target_size,scaling_factor)
         vertices, faces = prepare_3d_mesh(preprocessed_buildings, target_size, scaling_factor, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/buildings_without_base.stl')
         print(f"generation of buildings completed")
 
     #Generation of Paths
-    if paths:
+    if paths and len(object_list_paths) > 0:
         preprocessed_paths = preprocess_objects(object_list_paths,bbox,target_size,scaling_factor)
         vertices, faces = prepare_3d_mesh(preprocessed_paths, target_size, scaling_factor, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/paths_without_base.stl')
         print(f"generation of paths completed")
 
     #Generation of Water
-    if water:
+    if water and len(object_list_water) > 0:
         preprocessed_water = preprocess_objects(object_list_water,bbox,target_size,scaling_factor)
         vertices, faces = prepare_3d_mesh(preprocessed_water, target_size, scaling_factor, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/water_without_base.stl')
         print(f"generation of water completed")
 
     #Generation of "Green Areas" like Forest and Meadow
-    if green:
+    if green and len(object_list_greens) > 0:
         preprocessed_greens = preprocess_objects(object_list_greens,bbox,target_size,scaling_factor)
         vertices, faces = prepare_3d_mesh(preprocessed_greens, target_size, scaling_factor, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/greens_without_base.stl')

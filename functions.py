@@ -16,7 +16,7 @@ def fetch_location_data(bbox, location_type):
     if location_type == "buildings":
         gdf = ox.features_from_bbox( bbox , tags = {'building': True, 'historic': ['citywalls']})
     if location_type == "paths":
-        gdf = ox.features_from_bbox( bbox , tags = {'highway': True,' man_made': ['pier'], 'railway': True})
+        gdf = ox.features_from_bbox( bbox , tags = {'highway': True, 'man_made': ['pier'], 'railway': True, 'place': ['islet']})
     if location_type == "water":
         gdf = ox.features_from_bbox( bbox , tags = {'natural': ['water','reef'],'landuse': ['basin','salt_pond'], 'leisure': ['swimming_pool']})
     if location_type == "green":
@@ -83,8 +83,9 @@ def create_planar_face(face_indicies, vertices, id=0):
 
     polygon_input = str(len(face_indicies))
     polygon_coords = []
+    multiplicator = 10000
     for i in range(len(face_indicies)):
-        polygon_input += os.linesep + str(int(vertices[face_indicies[i]][0]*1000000000)) + " " + str(int(vertices[face_indicies[i]][1]*1000000000))
+        polygon_input += os.linesep + str(int(vertices[face_indicies[i]][0]*multiplicator)) + " " + str(int(vertices[face_indicies[i]][1]*multiplicator))
     cwd = os.path.dirname(os.path.realpath(__file__))
     polygon_input_file = open("cache/polygon_input_" + str(id) + ".txt", "w")
     polygon_input_file.write(polygon_input)
@@ -105,7 +106,7 @@ def create_planar_face(face_indicies, vertices, id=0):
             print(polygon_input)
             print("-------------------------------------------------------------------------")
             return faces
-        output[i] = float(output[i])/1000000000
+        output[i] = float(output[i])/multiplicator
         coord.append(output[i])
         if len(coord) == 2:
             triangle.append(coord)
@@ -114,20 +115,43 @@ def create_planar_face(face_indicies, vertices, id=0):
             triangles_xy.append(triangle)
             triangle = []
 
-    tolerance = 1e-07
+    tolerance = 0
+    max_cycles = 10000
+    step_size = 0.0000001
     for triangle in triangles_xy:
         sides = []
         for point in triangle:
             x,y = point
-            for index in face_indicies:
-                if math.isclose(x, vertices[index][0], rel_tol=tolerance) and math.isclose(y, vertices[index][1], rel_tol=tolerance):
-                    sides.append(index)
+            cycles = 0
+            hits = []
+            while len(hits) != 1:
+                hits = []
+                for index in face_indicies:
+                    if math.isclose(x, vertices[index][0], rel_tol=tolerance) and math.isclose(y, vertices[index][1], rel_tol=tolerance):
+                        hits.append(index)
+                if cycles > 200:
+                    print(f"We are at cycle {cycles} of trying to find a valid triangle. Tolerance is {tolerance}.")
+                    print(f"we are looking for x: {x} - y: {y}")
+                    print(f"so far we found:")
+                    for hit in hits:
+                        print(f"x: {vertices[hit][0]} - y: {vertices[hit][1]}")
+                if cycles > 0.9*max_cycles and len(hits) > 1:
+                    #This will be fixed as soon as the external triangulation is done and we can use the proper ids for processing
+                    print(f"after {cycles} cycles we still have more than one matching point. We will choose ony by luck.")
+                    hits = ([hits[0]])
+                if len(hits) < 1:
+                    tolerance += step_size
+                elif len(hits) > 1:
+                    tolerance -= step_size
+                if cycles == max_cycles:
+                    raise Exception("Could not find a matching point! Try adjusting tolerance value.")
+                cycles += 1
+            sides.append(hits[0])
         if len(sides) < 3:
             raise Exception("Not enough Sides for the Triangle! Try adjusting tolerance value.")
-        if len(sides) > 3:
+        elif len(sides) > 3:
             raise Exception("More than 3 Sides in the Triangle! Try adjusting tolerance value.")
         faces.append(sides)
-
     return faces
 
 def create_geometry(vertices,indicies):
@@ -176,8 +200,8 @@ def scale_polygon(exterior_coords, bbox, target_size, base_size):
 
     for i in range(len(exterior_coords)):
         exterior_coords[i] = list(exterior_coords[i])
-        exterior_coords[i][0] = ((exterior_coords[i][0] - south_lng) * scale_x) + center_offset_x
-        exterior_coords[i][1] = ((exterior_coords[i][1] - south_lat) * scale_y) + center_offset_y
+        exterior_coords[i][0] = round(((exterior_coords[i][0] - south_lng) * scale_x) + center_offset_x, 3)
+        exterior_coords[i][1] = round(((exterior_coords[i][1] - south_lat) * scale_y) + center_offset_y, 3)
     return shapely.Polygon(exterior_coords)
 
 def cut_polygon(geometry):    
@@ -201,10 +225,8 @@ def cut_polygon(geometry):
             #this prevents infinit loops
             if geom.area < geometry.area * 0.1:
                 not_counting_geoms += 1
-        #pyplot.show()
         geometry_count -= not_counting_geoms
         if geometry_count < 2:
-            geometry = geometry_collection.geoms[0]
             max_segment_length = 1/(first_index+1)
             #print(f"max_segment_length: {max_segment_length} - first_index: {first_index} - area: {geometry.area}")
             geometry = shapely.segmentize(geometry,max_segment_length)
@@ -301,8 +323,18 @@ def cut_order_scale(args):
         geometry = scale_polygon(geometry.exterior.coords,bbox,target_size,base_size)
         #simplify object
         geometry.simplify(0.1)
-        processed_objects.append([geometry,object[1]])
-
+        #in case the geometry is invalid we try to fix it
+        if not shapely.is_valid(geometry):
+            valid_geom = shapely.make_valid(geometry)
+            if isinstance(valid_geom, shapely.geometry.MultiPolygon):
+                for geom in valid_geom.geoms:
+                    if isinstance(geom,shapely.geometry.Polygon):
+                        processed_objects.append([geom,object[1]])
+            else:
+                if isinstance(valid_geom,shapely.geometry.Polygon):
+                    processed_objects.append([valid_geom,object[1]])
+        else:
+            processed_objects.append([geometry,object[1]])
     return processed_objects
 
 def create_add_faces(base_index, exterior_coords,vertices,faces, id=0):
@@ -320,6 +352,7 @@ def create_add_faces(base_index, exterior_coords,vertices,faces, id=0):
     return faces
 
 def prepare_3d_mesh(preprocessed_objects, target_size, scaling_factor, base_thickness=2, base_generation=True, object_generation=True):
+    #Generation of 3D Mesh out of 2D Shapes with height
     vertices = []
     faces = []
     base_size = target_size * scaling_factor
@@ -339,16 +372,13 @@ def prepare_3d_mesh(preprocessed_objects, target_size, scaling_factor, base_thic
 
     
     if object_generation == True:
-        
         for object in preprocessed_objects:
-            #Simple Progress Indicator
             exterior_coords = list(object[0].exterior.coords)
             height = object[1]
             #Remove any overhangs over the base plate. This is required since some objects start within the bbox but end outside of it.
             #If this is the case we have object which are a lot to big and are not printable.
             #After Cleanup the Vertices of the final object are added to the whole list
-            uncut_vertices = create_vertices_list(exterior_coords, base_thickness, height)
-            if(shapely.intersects(base_geometry, object[0])):
+            if shapely.intersects(base_geometry, object[0]):
                 intersection = shapely.intersection(base_geometry, object[0])
                 if isinstance(intersection, shapely.geometry.MultiPolygon):
                     for polygon in list(intersection.geoms):
@@ -365,6 +395,7 @@ def prepare_3d_mesh(preprocessed_objects, target_size, scaling_factor, base_thic
                     faces = create_add_faces(base_index, exterior_coords, vertices, faces)
             else:
                 continue
+            
 
     vertices = np.array(vertices)
     faces = np.array(faces)
@@ -387,7 +418,49 @@ def save_to_stl(vertices, faces, filename):
 
     mesh_data.save(filename)
 
+def cut_two_categories(base_category,cutting_category,detect_islands=False):
+    new_object_list = []
+    for base_object in base_category:
+        for cutting_object in cutting_category:
+            if shapely.intersects(base_object[0],cutting_object[0]):
+                #Island Detection Example:
+                #When we remove the water area from the green area and no area is left, the green area IS fully surroundend and therefore is an island.
+                if detect_islands and not shapely.difference(cutting_object[0],base_object[0]).area == 0:
+                    continue
+                base_object[0] = shapely.difference(base_object[0],cutting_object[0])
+        if(base_object[0].area == 0):
+            continue
+        #after all cuts we append the object to the list
+        if isinstance(base_object[0], shapely.geometry.MultiPolygon):
+            for polygon in base_object[0].geoms:
+                new_object_list.append(([polygon,base_object[1]]))
+        if isinstance(base_object[0], shapely.geometry.Polygon):
+            new_object_list.append(base_object)
+    return new_object_list
 
-def cut_object_categories(preprocessed_water,preprocessed_greens):
-    #The first object will be the upper layer
-    print("developement not finished")
+
+
+def cut_all_categories(object_list_buildings,object_list_paths,object_list_water,object_list_greens):
+    #If water is in a green area (like a river or a fointan) or a green is fully enclosed by water (an island) we need to cut the other parts. Otherwise fountains get lost in the end-result.
+    #Since we need to implement this cutting algorythm anyways we also cut buildings and paths out of the other objects to prevent overlapping and have a nicer print result.
+    #Order of objects from top to bottom:
+    # buildings (They are high, so no cutting required)
+    # paths
+    # water (except the green is fully enclosed by water)
+    # green
+
+    #remove stuff from paths
+    #object_list_paths = cut_two_categories(object_list_paths,object_list_buildings)
+
+    #remove stuff from the green areas
+    #object_list_water = cut_two_categories(object_list_water,object_list_buildings)
+    object_list_water = cut_two_categories(object_list_water,object_list_paths)
+    #This is a special case due to the island detection
+    object_list_water = cut_two_categories(object_list_water,object_list_greens,detect_islands=True)
+
+    #remove stuff from the green areas
+    object_list_greens = cut_two_categories(object_list_greens,object_list_buildings)
+    object_list_greens = cut_two_categories(object_list_greens,object_list_paths)
+    object_list_greens = cut_two_categories(object_list_greens,object_list_water)
+
+    return(object_list_buildings,object_list_paths,object_list_water,object_list_greens)
