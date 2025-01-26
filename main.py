@@ -16,7 +16,6 @@ from matplotlib import pyplot
 
 ### TODO ###
 #
-# Width of Paths
 # Performance!! Multithreading is working, but still it is quite slow
 # maybe implement triangulation by myself?
 # What about a bbox which is not a square? -> aspect ratio

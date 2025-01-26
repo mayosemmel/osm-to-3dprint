@@ -261,7 +261,63 @@ def generate_object_list(gdf,default_height,max_height_mm):
         object.append(row['geometry'])
         # If Object is a string convert to polygon
         if isinstance(object[0], shapely.geometry.LineString):
-            object[0] = shapely.buffer(object[0], 0.00002)
+            #manual definition of path width depending on type
+            if hasattr(row,"highway"):
+                if row.highway == "motorway":
+                    object[0] = shapely.buffer(object[0], 0.0001)
+                elif row.highway == "trunk":
+                    object[0] = shapely.buffer(object[0], 0.000075)
+                elif row.highway == "primary":
+                    object[0] = shapely.buffer(object[0], 0.00006)
+                elif row.highway == "secondary":
+                    object[0] = shapely.buffer(object[0], 0.000055)
+                elif row.highway == "tertiary":
+                    object[0] = shapely.buffer(object[0], 0.000045)
+                elif row.highway == "residential":
+                    object[0] = shapely.buffer(object[0], 0.000025)
+                elif row.highway == "motorway_link":
+                    object[0] = shapely.buffer(object[0], 0.00006)
+                elif row.highway == "trunk_link":
+                    object[0] = shapely.buffer(object[0], 0.00005)
+                elif row.highway == "primary_link":
+                    object[0] = shapely.buffer(object[0], 0.00005)
+                elif row.highway == "secondary_link":
+                    object[0] = shapely.buffer(object[0], 0.00004)
+                elif row.highway == "tertiary_link":
+                    object[0] = shapely.buffer(object[0], 0.00004)
+                elif row.highway == "living_street":
+                    object[0] = shapely.buffer(object[0], 0.000025)
+                elif row.highway == "service":
+                    object[0] = shapely.buffer(object[0], 0.00001)
+                elif row.highway == "pedestrian":
+                    object[0] = shapely.buffer(object[0], 0.00002)
+                elif row.highway == "track":
+                    object[0] = shapely.buffer(object[0], 0.000005)
+                elif row.highway == "footway":
+                    object[0] = shapely.buffer(object[0], 0.000004)
+                elif row.highway == "bridleway":
+                    object[0] = shapely.buffer(object[0], 0.000004)
+                elif row.highway == "path":
+                    object[0] = shapely.buffer(object[0], 0.000004)
+                elif row.highway == "sidewalk":
+                    object[0] = shapely.buffer(object[0], 0.000003)
+                elif row.highway == "crossing":
+                    object[0] = shapely.buffer(object[0], 0.000003)
+                elif row.highway == "traffic_island":
+                    object[0] = shapely.buffer(object[0], 0.000005)
+                elif row.highway == "cycleway":
+                    object[0] = shapely.buffer(object[0], 0.000005)
+                else:
+                    print(f"unclassified path width for type {row.highway}")
+                    object[0] = shapely.buffer(object[0], 0.000025)
+            elif hasattr(row,"man_made"):
+                if row.man_made == "pier":
+                    object[0] = shapely.buffer(object[0], 0.000004)
+            elif hasattr(row,"railway") and isinstance(row.railway,str):
+                if not row.tunnel == "yes":
+                    object[0] = shapely.buffer(object[0], 0.00002)
+            else:
+                object[0] = shapely.buffer(object[0], 0.000025)
         
         #Get Object height
         object.append(get_building_height(row, default_height) * height_scale)
@@ -372,7 +428,9 @@ def prepare_3d_mesh(preprocessed_objects, target_size, scaling_factor, base_thic
 
     
     if object_generation == True:
+        id = 0
         for object in preprocessed_objects:
+            print(f"processing object {id} of {len(preprocessed_objects)}")
             exterior_coords = list(object[0].exterior.coords)
             height = object[1]
             #Remove any overhangs over the base plate. This is required since some objects start within the bbox but end outside of it.
@@ -395,7 +453,7 @@ def prepare_3d_mesh(preprocessed_objects, target_size, scaling_factor, base_thic
                     faces = create_add_faces(base_index, exterior_coords, vertices, faces)
             else:
                 continue
-            
+            id += 1
 
     vertices = np.array(vertices)
     faces = np.array(faces)
