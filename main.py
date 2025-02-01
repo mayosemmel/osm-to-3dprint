@@ -39,11 +39,20 @@ def main():
     #bbox = (4.87123, 52.35893, 4.93389, 52.38351)  #Amsterdam
     #bbox = (10.85891, 49.27478, 10.86771, 49.27973) #Suddersdorf
     #bbox = (-1.266515, 51.757883, -1.263503, 51.759302) #Oxford University (Polygon with Holes)
-    bbox = (11.06375, 49.44759, 11.09048, 49.45976) #Nürnberg Zentrum
+    #bbox = (11.06375, 49.44759, 11.09048, 49.45976) #Nürnberg Zentrum
     #bbox = (11.07375, 49.40804, 11.11181, 49.42298) #Nürnberg Rangierbahnhof
     #bbox = (10.58769, 49.56984, 10.63133, 49.58768) # Neustadt Aisch
     #bbox = min Longitude , min Latitude , max Longitude , max Latitude 
+    
+    #latitude = 48.36024746461606 #JHS
+    #longitude = 10.917474400458017
 
+    latitude = 48.36534013137538 #Kö
+    longitude = 10.894424627125488
+
+    square_size_meters = 500
+
+    bbox = square_poly(latitude, longitude,square_size_meters)
     #Define what should be generated
     base_plate = True
     buildings = True
