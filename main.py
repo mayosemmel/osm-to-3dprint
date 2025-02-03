@@ -44,15 +44,11 @@ def main():
     #bbox = (10.58769, 49.56984, 10.63133, 49.58768) # Neustadt Aisch
     #bbox = min Longitude , min Latitude , max Longitude , max Latitude 
     
-    #latitude = 48.36024746461606 #JHS
-    #longitude = 10.917474400458017
-
-    latitude = 48.36534013137538 #Kö
-    longitude = 10.894424627125488
-
-    square_size_meters = 500
-
-    bbox = square_poly(latitude, longitude,square_size_meters)
+    #Get BBox from center point and square size
+    lat_long = (48.32950556656733, 10.90461275575229) # Augsburg
+    square_size_meters = 1000
+    bbox = square_poly(lat_long[0], lat_long[1],square_size_meters)
+    
     #Define what should be generated
     base_plate = True
     buildings = True
