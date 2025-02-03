@@ -451,6 +451,7 @@ def prepare_3d_mesh(preprocessed_objects, target_size, scaling_factor, base_thic
     if object_generation == True:
         id = 0
         for object in preprocessed_objects:
+            print(f"processing object {id} of {len(preprocessed_objects)}")
             exterior_coords = list(object[0].exterior.coords)
             height = object[1]
             #Remove any overhangs over the base plate. This is required since some objects start within the bbox but end outside of it.
