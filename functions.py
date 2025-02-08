@@ -11,6 +11,54 @@ from stl import mesh
 from mpl_toolkits import mplot3d
 from matplotlib import pyplot
 
+def generate_bbox_from_coords(lat_south,lon_west,lat_north,lon_east):
+    #if given coordinates do not represent a perfect square we will extend the coordinates accordingly
+    print(f"given coordinates:         {lat_south,lon_west,lat_north,lon_east}")
+    #if coordinates are on the same side of the globe the distance is just the difference
+    if (lat_south >= 0 and lat_north >= 0) or (lat_south <= 0 and lat_north <= 0):
+        lat_distance = abs(lat_south - lat_north)
+    #if coordinates are not on the same side of the globe we need to add the different values
+    elif ((lat_south >= 0 and lat_north <= 0) or (lat_south <= 0 and lat_north >= 0)):
+        lat_distance = abs(lat_south) + abs(lat_north)
+
+    #if coordinates are on the same side of the globe the distance is just the difference
+    if (lon_west >= 0 and lon_east >= 0) or (lon_west <= 0 and lon_east <= 0):
+        lon_distance = abs(lon_west - lon_east)
+    #if coordinates are not on the same side of the globe we need to add the different values
+    elif ((lon_west >= 0 and lon_east <= 0) or (lon_west <= 0 and lon_east >= 0)):
+        lon_distance = abs(lon_west) + abs(lon_east)
+        #if the coordinates are more than 200 degree apart. We either got over the +/- 180 line or have invalid data anyways.
+        #We take care about the +/- 180 line here
+        if lon_distance > 200:
+            lon_distance = abs(abs(lon_west)-180) + lon_east
+    
+    #Now we take care of the different distances
+    if lat_distance > lon_distance:
+        diff_distance = lat_distance - lon_distance
+        if lon_west >= 0:
+            lon_west += diff_distance/2
+        elif lon_west <=0:
+            lon_west -= diff_distance/2
+        if lon_east >= 0:
+            lon_east += diff_distance/2
+        elif lon_east <=0:
+            lon_east -= diff_distance/2
+    elif lon_distance > lat_distance:
+        diff_distance = lon_distance - lat_distance
+        if lat_south >= 0:
+            lat_south += diff_distance/2
+        elif lat_south <=0:
+            lat_south -= diff_distance/2
+        if lat_north >= 0:
+            lat_north += diff_distance/2
+        elif lat_north <=0:
+            lat_north -= diff_distance/2
+
+    print(f"actually used coordinates: {lat_south,lon_west,lat_north,lon_east}")
+    bbox = (lon_west, lat_south, lon_east, lat_north)
+    return bbox
+
+
 def fetch_location_data(bbox, location_type):
     # Fetch building footprints within the bounding box
     if location_type == "buildings":
@@ -207,37 +255,56 @@ def scale_polygon(exterior_coords, bbox, target_size, base_size):
 def cut_polygon(geometry):    
     geometry_count = 1
     first_index = 0
-    #we are doing this until something is cut
-    while geometry_count < 2:
-        geometry.simplify(0.001)
-        #a line from the between first and middle vertex which should result in a more or less diagonal cut
-        second_index = int(len(geometry.exterior.coords)/2)
-        first_vertex = geometry.exterior.coords[first_index]
-        second_vertex = geometry.exterior.coords[second_index]
+    geometry_collection = []
+    #we are doing this until all interiors are cut out and the original geometry is completely moved to the collection we will return
+    interiors = len(list(geometry.interiors))
+    while interiors > 0 and geometry.area != 0:
+        #if we are dealing with a MultiPolygon due to previous cuts we are using points of the first polygon.
+        #Since the MultiPolygon is reduced with every cut at some point it is no longer a MultiPolygon.
+        if isinstance(geometry,shapely.MultiPolygon) or isinstance(geometry,shapely.GeometryCollection):
+            for geom in geometry.geoms:
+                if isinstance(geom,shapely.Polygon):
+                    current_geometry_part = geom
+                else:
+                    if geom.area > 0:
+                        print(f"We are not taking care of Geometry with Area {geom.area}. This is most likely a Bug.")
+        else:
+            current_geometry_part = geometry
+        interiors = 0
+        #if the first index to use to draw a line is higher than the the amount of indicies we are at the next polygon. So we need to reset it.
+        if len(current_geometry_part.exterior.coords)-1 < first_index:
+            first_index = 0
+        #a line between first and middle vertex which should result in a more or less diagonal cut
+        second_index = int(len(current_geometry_part.exterior.coords)/2)
+        first_vertex = current_geometry_part.exterior.coords[first_index]
+        second_vertex = current_geometry_part.exterior.coords[second_index]
         line = shapely.LineString([first_vertex, second_vertex])
-        geometry_collection = shapely.ops.split(geometry, line)
+        cutted_geoms = shapely.ops.split(current_geometry_part, line)
         #In some cases we don't cut anything, then we need another position.
         #Therefore we make the polygon more precise and move the starting index by 1
-        geometry_count = len(geometry_collection.geoms)
-        not_counting_geoms = 0
-        for geom in geometry_collection.geoms:
-            #if less than 10% of the original geometry is cut, ignore the cut and try again at another position
-            #this prevents infinit loops
-            if geom.area < geometry.area * 0.1:
-                not_counting_geoms += 1
-        geometry_count -= not_counting_geoms
-        if geometry_count < 2:
+        for geom in cutted_geoms.geoms:
+            if len(list(geom.interiors)) == 0 and isinstance(geom,shapely.Polygon):
+                geometry_collection.append(geom)
+                geometry = shapely.difference(geometry,geom)
+            interiors += len(list(geom.interiors))
+        if geometry.area > 0 and current_geometry_part.area > 0:
             max_segment_length = 1/(first_index+1)
-            #print(f"max_segment_length: {max_segment_length} - first_index: {first_index} - area: {geometry.area}")
+            print(f"max_segment_length: {max_segment_length} - first_index: {first_index} - area: {current_geometry_part.area}")
             geometry = shapely.segmentize(geometry,max_segment_length)
             first_index += 1
             i = 0
-            while (len(geometry.exterior.coords)-1) <= first_index:
-                #print(f"max_segment_length: {max_segment_length} - first_index: {first_index} - area: {geometry.area}")
-                max_segment_length = 1/(first_index+1+i)
+            while (len(current_geometry_part.exterior.coords)-1) <= first_index:
+                print(f"max_segment_length: {max_segment_length} - first_index: {first_index} - area: {current_geometry_part.area}")
+                max_segment_length = current_geometry_part.length/(10+i)
                 geometry = shapely.segmentize(geometry,max_segment_length)
+                if isinstance(geometry,shapely.MultiPolygon) or isinstance(geometry,shapely.GeometryCollection):
+                    current_geometry_part = geometry.geoms[0]
+                else:
+                    current_geometry_part = geometry
+                if current_geometry_part.area == 0:
+                    break
                 i += 1
-    return geometry_collection.geoms
+    return geometry_collection
 
 def generate_object_list(gdf,default_height,max_height_mm):
     #Create a List of 3D Geometries (objects) out of the OSM Data
@@ -288,25 +355,25 @@ def generate_object_list(gdf,default_height,max_height_mm):
                 elif row.highway == "living_street":
                     object[0] = shapely.buffer(object[0], 0.000025)
                 elif row.highway == "service":
-                    object[0] = shapely.buffer(object[0], 0.00001)
+                    object[0] = shapely.buffer(object[0], 0.000025)
                 elif row.highway == "pedestrian":
-                    object[0] = shapely.buffer(object[0], 0.00002)
+                    object[0] = shapely.buffer(object[0], 0.000025)
                 elif row.highway == "track":
-                    object[0] = shapely.buffer(object[0], 0.000005)
+                    object[0] = shapely.buffer(object[0], 0.000025)
                 elif row.highway == "footway":
-                    object[0] = shapely.buffer(object[0], 0.000004)
+                    object[0] = shapely.buffer(object[0], 0.000025)
                 elif row.highway == "bridleway":
-                    object[0] = shapely.buffer(object[0], 0.000004)
+                    object[0] = shapely.buffer(object[0], 0.000025)
                 elif row.highway == "path":
-                    object[0] = shapely.buffer(object[0], 0.000004)
+                    object[0] = shapely.buffer(object[0], 0.000025)
                 elif row.highway == "sidewalk":
-                    object[0] = shapely.buffer(object[0], 0.000003)
+                    object[0] = shapely.buffer(object[0], 0.000025)
                 elif row.highway == "crossing":
-                    object[0] = shapely.buffer(object[0], 0.000003)
+                    object[0] = shapely.buffer(object[0], 0.000025)
                 elif row.highway == "traffic_island":
-                    object[0] = shapely.buffer(object[0], 0.000005)
+                    object[0] = shapely.buffer(object[0], 0.000025)
                 elif row.highway == "cycleway":
-                    object[0] = shapely.buffer(object[0], 0.000005)
+                    object[0] = shapely.buffer(object[0], 0.000025)
                 else:
                     print(f"unclassified path width for type {row.highway}")
                     object[0] = shapely.buffer(object[0], 0.000025)
@@ -334,9 +401,13 @@ def preprocess_objects(object_list,bbox,target_size,scaling_factor):
     #Call Preprocessing Function in Multiprocessing
     print("starting preprocessing with", multiprocessing.cpu_count(), "CPU Cores")
     with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
-    #with multiprocessing.Pool(1) as p:
         meta_object_list = p.map(cut_order_scale,parameters)
-    
+    ###################################
+    #This is only for debugging without multiprocessing
+    #meta_object_list = []
+    #for param in parameters:
+    #    meta_object_list.append(cut_order_scale(param))
+    ######################################
     preprocessed_objects = []
     for meta_object in meta_object_list:
             for object in meta_object:
@@ -347,29 +418,14 @@ def preprocess_objects(object_list,bbox,target_size,scaling_factor):
 def cut_order_scale(args):
     object,bbox,target_size,base_size = args
     processed_objects = []
-    geometry_list=([object[0]])
 
     #If Polygon has holes, remove them by splitting it into multiple Polygons
-    interiors = len(list(geometry_list[0].interiors))
-    while interiors > 0:
-        interiors = 0
-        cut_geometries = []
-        for geometry in geometry_list:
-            if(len(list(geometry.interiors))):
-                for interior in geometry.interiors:
-                    #If geometry is too small it takes ages to cut on the right place and we have no benefit. So we just remove the interior.
-                    if shapely.Polygon(interior.coords).area > 1e-12:
-                        cut_geometries.extend(cut_polygon(geometry))
-                    else:
-                        print(f"Interior with area {shapely.Polygon(interior.coords).area} was removed. If this reduces quality try adjusting tolerance level.")
-                        cut_geometries.append(create_geometry(geometry.exterior.coords, range(len(geometry.exterior.coords))))
-            else:
-                #nothing to cut
-                cut_geometries.append(geometry)
-        geometry_list = cut_geometries
-        for geometry in geometry_list:
-            interiors += len(list(geometry.interiors))
-        
+    if(len(list(object[0].interiors))):
+        geometry_list = cut_polygon(object[0])
+    else:
+        #nothing to cut
+        geometry_list=([object[0]])
+
     for geometry in geometry_list:
         #check if points of polygon are clockwise ordered
         if shapely.algorithms.cga.signed_area(geometry.exterior) > 0:
@@ -433,6 +489,9 @@ def prepare_3d_mesh(preprocessed_objects, target_size, scaling_factor, base_thic
             print(f"processing object {id} of {len(preprocessed_objects)}")
             exterior_coords = list(object[0].exterior.coords)
             height = object[1]
+            if id > 5000:
+                pyplot.plot(*object[0].exterior.xy)
+                pyplot.show()
             #Remove any overhangs over the base plate. This is required since some objects start within the bbox but end outside of it.
             #If this is the case we have object which are a lot to big and are not printable.
             #After Cleanup the Vertices of the final object are added to the whole list
@@ -507,17 +566,12 @@ def cut_all_categories(object_list_buildings,object_list_paths,object_list_water
     # water (except the green is fully enclosed by water)
     # green
 
-    #remove stuff from paths
-    #object_list_paths = cut_two_categories(object_list_paths,object_list_buildings)
-
-    #remove stuff from the green areas
-    #object_list_water = cut_two_categories(object_list_water,object_list_buildings)
+    #remove stuff from water areas
     object_list_water = cut_two_categories(object_list_water,object_list_paths)
     #This is a special case due to the island detection
     object_list_water = cut_two_categories(object_list_water,object_list_greens,detect_islands=True)
 
     #remove stuff from the green areas
-    object_list_greens = cut_two_categories(object_list_greens,object_list_buildings)
     object_list_greens = cut_two_categories(object_list_greens,object_list_paths)
     object_list_greens = cut_two_categories(object_list_greens,object_list_water)
 
