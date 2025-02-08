@@ -252,8 +252,7 @@ def scale_polygon(exterior_coords, bbox, target_size, base_size):
         exterior_coords[i][1] = round(((exterior_coords[i][1] - south_lat) * scale_y) + center_offset_y, 3)
     return shapely.Polygon(exterior_coords)
 
-def cut_polygon(geometry):    
-    geometry_count = 1
+def cut_polygon(geometry):
     first_index = 0
     geometry_collection = []
     #we are doing this until all interiors are cut out and the original geometry is completely moved to the collection we will return
