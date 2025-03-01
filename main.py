@@ -16,9 +16,7 @@ from matplotlib import pyplot
 
 ### TODO ###
 #
-# fix cut_polygon. We need to completely remove all interiors without leaving the function.
 # maybe implement triangulation by myself?
-# What about a bbox which is not a square? -> aspect ratio
 
 
 
@@ -40,7 +38,7 @@ def main():
     #bbox = (10.85891, 49.27478, 10.86771, 49.27973) #Suddersdorf
     #bbox = (-1.266515, 51.757883, -1.263503, 51.759302) #Oxford University (Polygon with Holes)
     #bbox = (11.06375, 49.44759, 11.09048, 49.45976) #Nürnberg Zentrum
-    #bbox = (11.07375, 49.40804, 11.11181, 49.42298) #Nürnberg Rangierbahnhof
+    bbox = (11.07375, 49.40804, 11.11181, 49.42298) #Nürnberg Rangierbahnhof
     #bbox = generate_bbox_from_coords(49.35939, 10.87368, 49.37005, 10.89294) #Buchschwabach
     #bbox = (11.03946, 49.38656, 11.07800, 49.41215) # Nürnberg Hafen
     #bbox = (10.58769, 49.56984, 10.63133, 49.58768) # Neustadt Aisch
@@ -49,7 +47,7 @@ def main():
     #Get BBox from center point and square size
     #bbox = square_poly(Latitude, Longitude, Square Size in Meter)
     #bbox = square_poly(48.32950556656733, 10.90461275575229, 1000) #Augsburg
-    bbox = square_poly(49.453675, 11.077115, 1000) #Nürnberg Zentrum
+    #bbox = square_poly(49.453675, 11.077115, 1000) #Nürnberg Zentrum
     
     #Define what should be generated
     base_plate = True

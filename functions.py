@@ -363,14 +363,14 @@ def preprocess_objects(object_list,bbox,target_size,scaling_factor):
         parameters.append([object,bbox,target_size,base_size,id])
         id += 1
     #Call Preprocessing Function in Multiprocessing
-    #print("starting preprocessing with", multiprocessing.cpu_count(), "CPU Cores")
-    #with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
-    #    meta_object_list = p.map(cut_order_scale,parameters)
+    print("starting preprocessing with", multiprocessing.cpu_count(), "CPU Cores")
+    with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
+        meta_object_list = p.map(cut_order_scale,parameters)
     ###################################
     #This is only for debugging without multiprocessing
-    meta_object_list = []
-    for param in parameters:
-        meta_object_list.append(cut_order_scale(param))
+    #meta_object_list = []
+    #for param in parameters:
+    #    meta_object_list.append(cut_order_scale(param))
     ######################################
     preprocessed_objects = []
     for meta_object in meta_object_list:
