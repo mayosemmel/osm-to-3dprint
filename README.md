@@ -49,6 +49,8 @@ Run the script:
 Here's are samples visualized in Bambu Studio:
 Amsterdam:
 ![image](https://github.com/user-attachments/assets/94267752-b349-49f3-b246-a426d121780d)
+![image](https://github.com/user-attachments/assets/fee4c816-3e60-4c5d-8634-b5b87b57d851)
+
 
 Nürnberg Rangierbahnhof:
 ![image](https://github.com/user-attachments/assets/0635b480-f29c-4d2a-baa7-708164dce163)
