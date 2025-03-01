@@ -30,53 +30,6 @@ def square_poly(lat, lon, distance=25000/sqrt(2)):
     
     return returnpoly.bounds
 
-def generate_bbox_from_coords(lat_south,lon_west,lat_north,lon_east):
-    #if given coordinates do not represent a perfect square we will extend the coordinates accordingly
-    print(f"given coordinates:         {lat_south,lon_west,lat_north,lon_east}")
-    #if coordinates are on the same side of the globe the distance is just the difference
-    if (lat_south >= 0 and lat_north >= 0) or (lat_south <= 0 and lat_north <= 0):
-        lat_distance = abs(lat_south - lat_north)
-    #if coordinates are not on the same side of the globe we need to add the different values
-    elif ((lat_south >= 0 and lat_north <= 0) or (lat_south <= 0 and lat_north >= 0)):
-        lat_distance = abs(lat_south) + abs(lat_north)
-
-    #if coordinates are on the same side of the globe the distance is just the difference
-    if (lon_west >= 0 and lon_east >= 0) or (lon_west <= 0 and lon_east <= 0):
-        lon_distance = abs(lon_west - lon_east)
-    #if coordinates are not on the same side of the globe we need to add the different values
-    elif ((lon_west >= 0 and lon_east <= 0) or (lon_west <= 0 and lon_east >= 0)):
-        lon_distance = abs(lon_west) + abs(lon_east)
-        #if the coordinates are more than 200 degree apart. We either got over the +/- 180 line or have invalid data anyways.
-        #We take care about the +/- 180 line here
-        if lon_distance > 200:
-            lon_distance = abs(abs(lon_west)-180) + lon_east
-    
-    #Now we take care of the different distances
-    if lat_distance > lon_distance:
-        diff_distance = lat_distance - lon_distance
-        if lon_west >= 0:
-            lon_west += diff_distance/2
-        elif lon_west <=0:
-            lon_west -= diff_distance/2
-        if lon_east >= 0:
-            lon_east += diff_distance/2
-        elif lon_east <=0:
-            lon_east -= diff_distance/2
-    elif lon_distance > lat_distance:
-        diff_distance = lon_distance - lat_distance
-        if lat_south >= 0:
-            lat_south += diff_distance/2
-        elif lat_south <=0:
-            lat_south -= diff_distance/2
-        if lat_north >= 0:
-            lat_north += diff_distance/2
-        elif lat_north <=0:
-            lat_north -= diff_distance/2
-
-    print(f"actually used coordinates: {lat_south,lon_west,lat_north,lon_east}")
-    bbox = (lon_west, lat_south, lon_east, lat_north)
-    return bbox
-
 def fetch_location_data(bbox, location_type):
     # Fetch building footprints within the bounding box
     try:
@@ -397,7 +350,8 @@ def generate_object_list(gdf,default_height,max_height_mm):
         #Get Object height
         object.append(get_building_height(row, default_height) * height_scale)
 
-        object_list.append(object)
+        if object[0].area > 0:
+            object_list.append(object)
     return(object_list)
         
 def preprocess_objects(object_list,bbox,target_size,scaling_factor):
@@ -409,14 +363,14 @@ def preprocess_objects(object_list,bbox,target_size,scaling_factor):
         parameters.append([object,bbox,target_size,base_size,id])
         id += 1
     #Call Preprocessing Function in Multiprocessing
-    print("starting preprocessing with", multiprocessing.cpu_count(), "CPU Cores")
-    with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
-        meta_object_list = p.map(cut_order_scale,parameters)
+    #print("starting preprocessing with", multiprocessing.cpu_count(), "CPU Cores")
+    #with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
+    #    meta_object_list = p.map(cut_order_scale,parameters)
     ###################################
     #This is only for debugging without multiprocessing
-    #meta_object_list = []
-    #for param in parameters:
-    #    meta_object_list.append(cut_order_scale(param))
+    meta_object_list = []
+    for param in parameters:
+        meta_object_list.append(cut_order_scale(param))
     ######################################
     preprocessed_objects = []
     for meta_object in meta_object_list:
@@ -430,7 +384,7 @@ def cut_order_scale(args):
     print(f"preprocessing id: {id}")
     processed_objects = []
     #If Polygon has holes, remove them by splitting it into multiple Polygons
-    if(len(list(object[0].interiors))):
+    if len(list(object[0].interiors)):
         geometry_list = cut_polygon(object[0])
     else:
         #nothing to cut
