@@ -253,57 +253,45 @@ def scale_polygon(exterior_coords, bbox, target_size, base_size):
     return shapely.Polygon(exterior_coords)
 
 def cut_polygon(geometry):
-    first_index = 0
-    geometry_collection = []
+    geoms_with_interiors = [geometry]
+    geoms_without_interiors = []
     #we are doing this until all interiors are cut out and the original geometry is completely moved to the collection we will return
-    interiors = len(list(geometry.interiors))
-    while interiors > 0 and geometry.area != 0:
-        #if we are dealing with a MultiPolygon due to previous cuts we are using points of the first polygon.
-        #Since the MultiPolygon is reduced with every cut at some point it is no longer a MultiPolygon.
-        if isinstance(geometry,shapely.MultiPolygon) or isinstance(geometry,shapely.GeometryCollection):
-            for geom in geometry.geoms:
-                if isinstance(geom,shapely.Polygon):
-                    current_geometry_part = geom
+    cycles = 0
+    while len(geoms_with_interiors) > 0:
+        geom_list_copy = geoms_with_interiors
+        geoms_with_interiors = []
+        for geom in geom_list_copy:
+            min_x = geom.exterior.xy[0][0]
+            max_x = geom.exterior.xy[0][0]
+            for x in geom.exterior.xy[0]:
+                if x < min_x:
+                    min_x = x
+                if x > max_x:
+                    max_x = x
+            min_y = geom.exterior.xy[1][0]
+            max_y = geom.exterior.xy[1][0]
+            for y in geom.exterior.xy[1]:
+                if y < min_y:
+                    min_y = y
+                if y > max_y:
+                    max_y = y
+            if cycles % 2:
+                first_vertex = ([min_x,min_y])
+                second_vertex = ([max_x,max_y])
+            else:
+                first_vertex = ([min_x,max_y])
+                second_vertex = ([max_x,min_y])
+            line = shapely.LineString([first_vertex, second_vertex])
+            for cutted_geom in shapely.ops.split(geom, line).geoms:
+                if cutted_geom.area == 0:
+                    continue
+                if len(list(cutted_geom.interiors)):
+                    geoms_with_interiors.append(cutted_geom)
                 else:
-                    if geom.area > 0:
-                        print(f"We are not taking care of Geometry with Area {geom.area}. This is most likely a Bug.")
-        else:
-            current_geometry_part = geometry
-        interiors = 0
-        #if the first index to use to draw a line is higher than the the amount of indicies we are at the next polygon. So we need to reset it.
-        if len(current_geometry_part.exterior.coords)-1 < first_index:
-            first_index = 0
-        #a line between first and middle vertex which should result in a more or less diagonal cut
-        second_index = int(len(current_geometry_part.exterior.coords)/2)
-        first_vertex = current_geometry_part.exterior.coords[first_index]
-        second_vertex = current_geometry_part.exterior.coords[second_index]
-        line = shapely.LineString([first_vertex, second_vertex])
-        cutted_geoms = shapely.ops.split(current_geometry_part, line)
-        #In some cases we don't cut anything, then we need another position.
-        #Therefore we make the polygon more precise and move the starting index by 1
-        for geom in cutted_geoms.geoms:
-            if len(list(geom.interiors)) == 0 and isinstance(geom,shapely.Polygon):
-                geometry_collection.append(geom)
-                geometry = shapely.difference(geometry,geom)
-            interiors += len(list(geom.interiors))
-        if geometry.area > 0 and current_geometry_part.area > 0:
-            max_segment_length = 1/(first_index+1)
-            print(f"max_segment_length: {max_segment_length} - first_index: {first_index} - area: {current_geometry_part.area}")
-            geometry = shapely.segmentize(geometry,max_segment_length)
-            first_index += 1
-            i = 0
-            while (len(current_geometry_part.exterior.coords)-1) <= first_index:
-                print(f"max_segment_length: {max_segment_length} - first_index: {first_index} - area: {current_geometry_part.area}")
-                max_segment_length = current_geometry_part.length/(10+i)
-                geometry = shapely.segmentize(geometry,max_segment_length)
-                if isinstance(geometry,shapely.MultiPolygon) or isinstance(geometry,shapely.GeometryCollection):
-                    current_geometry_part = geometry.geoms[0]
-                else:
-                    current_geometry_part = geometry
-                if current_geometry_part.area == 0:
-                    break
-                i += 1
-    return geometry_collection
+                    geoms_without_interiors.append(cutted_geom)
+        cycles += 1
+    return geoms_without_interiors
+
 
 def generate_object_list(gdf,default_height,max_height_mm):
     #Create a List of 3D Geometries (objects) out of the OSM Data
@@ -394,9 +382,11 @@ def generate_object_list(gdf,default_height,max_height_mm):
 def preprocess_objects(object_list,bbox,target_size,scaling_factor):
     parameters = []
     base_size = target_size*scaling_factor
+    id = 0
     for object in object_list:
         #Create a List with all parameters for multiprocessing
-        parameters.append([object,bbox,target_size,base_size])
+        parameters.append([object,bbox,target_size,base_size,id])
+        id += 1
     #Call Preprocessing Function in Multiprocessing
     print("starting preprocessing with", multiprocessing.cpu_count(), "CPU Cores")
     with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
@@ -415,9 +405,9 @@ def preprocess_objects(object_list,bbox,target_size,scaling_factor):
     return preprocessed_objects
 
 def cut_order_scale(args):
-    object,bbox,target_size,base_size = args
+    object,bbox,target_size,base_size,id = args
+    print(f"preprocessing id: {id}")
     processed_objects = []
-
     #If Polygon has holes, remove them by splitting it into multiple Polygons
     if(len(list(object[0].interiors))):
         geometry_list = cut_polygon(object[0])
@@ -432,8 +422,6 @@ def cut_order_scale(args):
 
         #scale object
         geometry = scale_polygon(geometry.exterior.coords,bbox,target_size,base_size)
-        #simplify object
-        geometry.simplify(0.1)
         #in case the geometry is invalid we try to fix it
         if not shapely.is_valid(geometry):
             valid_geom = shapely.make_valid(geometry)
@@ -488,9 +476,6 @@ def prepare_3d_mesh(preprocessed_objects, target_size, scaling_factor, base_thic
             print(f"processing object {id} of {len(preprocessed_objects)}")
             exterior_coords = list(object[0].exterior.coords)
             height = object[1]
-            if id > 5000:
-                pyplot.plot(*object[0].exterior.xy)
-                pyplot.show()
             #Remove any overhangs over the base plate. This is required since some objects start within the bbox but end outside of it.
             #If this is the case we have object which are a lot to big and are not printable.
             #After Cleanup the Vertices of the final object are added to the whole list
