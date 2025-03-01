@@ -6,20 +6,15 @@ import concurrent.futures
 import multiprocessing
 import os
 import math
-import shapely.prepared
+import geopandas
 from stl import mesh
 from mpl_toolkits import mplot3d
 from matplotlib import pyplot
 
 
-import geopandas as gpd
-from math import sqrt
-from shapely import wkt
-
-
-def square_poly(lat, lon, distance=25000/sqrt(2)):
-    gs = gpd.GeoSeries(wkt.loads(f'POINT ({lon} {lat})'))
-    gdf = gpd.GeoDataFrame(geometry=gs)
+def square_poly(lat, lon, distance):
+    gs = geopandas.GeoSeries(shapely.wkt.loads(f'POINT ({lon} {lat})'))
+    gdf = geopandas.GeoDataFrame(geometry=gs)
     gdf.crs='EPSG:4326'
     gdf = gdf.to_crs('EPSG:3857')
     res = gdf.buffer(

@@ -6,7 +6,6 @@ import concurrent.futures
 import multiprocessing
 import os
 import math
-import shapely.prepared
 from functions import *
 from stl import mesh
 from mpl_toolkits import mplot3d
