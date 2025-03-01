@@ -11,6 +11,25 @@ from stl import mesh
 from mpl_toolkits import mplot3d
 from matplotlib import pyplot
 
+
+import geopandas as gpd
+from math import sqrt
+from shapely import wkt
+
+
+def square_poly(lat, lon, distance=25000/sqrt(2)):
+    gs = gpd.GeoSeries(wkt.loads(f'POINT ({lon} {lat})'))
+    gdf = gpd.GeoDataFrame(geometry=gs)
+    gdf.crs='EPSG:4326'
+    gdf = gdf.to_crs('EPSG:3857')
+    res = gdf.buffer(
+        distance=distance,
+        cap_style=3,
+    )
+    returnpoly = res.to_crs('EPSG:4326').iloc[0]
+    
+    return returnpoly.bounds
+
 def generate_bbox_from_coords(lat_south,lon_west,lat_north,lon_east):
     #if given coordinates do not represent a perfect square we will extend the coordinates accordingly
     print(f"given coordinates:         {lat_south,lon_west,lat_north,lon_east}")
@@ -58,17 +77,19 @@ def generate_bbox_from_coords(lat_south,lon_west,lat_north,lon_east):
     bbox = (lon_west, lat_south, lon_east, lat_north)
     return bbox
 
-
 def fetch_location_data(bbox, location_type):
     # Fetch building footprints within the bounding box
-    if location_type == "buildings":
-        gdf = ox.features_from_bbox( bbox , tags = {'building': True, 'historic': ['citywalls']})
-    if location_type == "paths":
-        gdf = ox.features_from_bbox( bbox , tags = {'highway': True, 'man_made': ['pier'], 'railway': True, 'place': ['islet']})
-    if location_type == "water":
-        gdf = ox.features_from_bbox( bbox , tags = {'natural': ['water','reef'],'landuse': ['basin','salt_pond'], 'leisure': ['swimming_pool']})
-    if location_type == "green":
-        gdf = ox.features_from_bbox( bbox , tags = {'landuse': ['forest','meadow','grass','allotments','flowerbed','orchard','plant_nursery','vineyard','cemetery','recreation_ground','village_green'],'leisure': ['garden','park','pitch'],'natural': ['grassland','scrub','wood']})
+    try:
+        if location_type == "buildings":
+            gdf = ox.features_from_bbox( bbox , tags = {'building': True, 'historic': ['citywalls']})
+        if location_type == "paths":
+            gdf = ox.features_from_bbox( bbox , tags = {'highway': True, 'man_made': ['pier'], 'railway': True, 'place': ['islet']})
+        if location_type == "water":
+            gdf = ox.features_from_bbox( bbox , tags = {'natural': ['water','reef'],'landuse': ['basin','salt_pond'], 'leisure': ['swimming_pool']})
+        if location_type == "green":
+            gdf = ox.features_from_bbox( bbox , tags = {'landuse': ['forest','meadow','grass','allotments','flowerbed','orchard','plant_nursery','vineyard','cemetery','recreation_ground','village_green'],'leisure': ['garden','park','pitch'],'natural': ['grassland','scrub','wood']})
+    except: # Return Empty Polygon if location type is not found
+        gdf = ([[shapely.Polygon(),0]])
     return gdf
 
 def get_building_height(row, default_height=10):
