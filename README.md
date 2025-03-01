@@ -1,6 +1,7 @@
 # Fork
 This is a Fork from [https://github.com/nimbus-flight/osm-to-3dprint](https://github.com/nimbus-flight/osm-to-3dprint) with several adjustments and improvements.
 The two major improvements are compatibility with current (December 2024) Python Libraries and Multi Color Export in multiple files.
+Part of these improvements is the correct triangulation of shapes. In the original code the solution did not work correctly in a lot of situations
 Since the original Version wasn't even working the sponsoring links are removed in this readme.
 
 # osm-to-3dprint
@@ -11,10 +12,8 @@ Export OpenStreetMap (OSM) tiles, convert them to STL format, and import them di
 ```
 
 # Benefits
-- Larger Area Exports: Unlike Cadmapper, which limits free exports to 1 square kilometer, osm-to-3dprint allows you to export much larger areas without any cost.
 - Optimized for 3D Printing: The exported STL files are designed to have no non-manifold edges, which ensures that the model is ready for 3D printing without the need for repairs.
 - Small File Size: Despite covering extensive areas, the exported STL files are compact in size. For example, the entire downtown area of San Francisco (buildings.stl) is around ~17.5 MB (around 8.86 square kilometers).
-- Relatively Fast - less than one minute to run main.py and get a city file for any given city.
 - Multi File Export of Water, Paths, Baseplate and Buildings for Multi Color Printing
 
 # Features
@@ -30,12 +29,14 @@ Please follow the instructions on GitHub for integration of the Tool. We expect 
 This project relies on several libraries, including OSM, overpass-api, osmnx, shapely, trimesh, and numpy-stl.
 
 ## Sample Usage
-Please use the productive branch for a working experience. The main Branch might be in developement and therefore not working or working incorrectly
+The whole project needs to be consideres work in progress. Most of the times the main branch should work but please consider using older commits if not.
 
-Adjust the GPS coordinates to define the bounding box of the area you wish to export:
+Adjust the GPS coordinates to define the bounding box of the area you wish to export. There are two options to do that, either use a center and a square size or define a box by coordinates.
 
+#bbox = square_poly(Latitude, Longitude, Square Size in Meter)
+bbox = square_poly(48.32950556656733, 10.90461275575229, 1000) #Augsburg Example
 ```
-# Example bounding box: min Longitude , min Latitude , max Longitude , max Latitude 
+#bbox = min Longitude , min Latitude , max Longitude , max Latitude
 bbox = (4.87123, 52.35893, 4.93389, 52.38351) # Amsterdam Example
 ```
 
@@ -44,13 +45,13 @@ You can also modify parameters like target_size, max_height, and base_thickness 
 Run the script:
 ```python3 main.py```
 
-## Known Restrictions
-The Generation of Streets is not working properly yet. Also Nature like stuff is not mapped correctly. Therefore small villages don't look good (yet).
-
 ## Example Output
-Here's a sample of Amsterdam visualized in Bambu Studio:
+Here's are samples visualized in Bambu Studio:
+Amsterdam:
+![image](https://github.com/user-attachments/assets/94267752-b349-49f3-b246-a426d121780d)
 
-![Screenshot from 2024-12-27 23-16-30](https://github.com/user-attachments/assets/a9a5ded4-53f0-4c70-ae7f-d6aba429af53)
+Nürnberg Rangierbahnhof:
+![image](https://github.com/user-attachments/assets/0635b480-f29c-4d2a-baa7-708164dce163)
 
 For Bambu Studio select all STL File at once, then you will be asked if you want to import it as one object. Afterwards you can select multiple colors.
 
@@ -60,8 +61,7 @@ For Bambu Studio select all STL File at once, then you will be asked if you want
 
 ## Acknowledgments / Licensing
 The original Project is licensed with MIT License, so this one will be too. BUT the original project also had the following phrase regarding ChatGPT. Code out of Language Models is not license free and depending on situation might be copied from other projects. No new AI Code was added but the original parts remain. Please consider this when using the Code.
-
-*Special thanks to [ChatGPT](https://www.openai.com/chatgpt) by OpenAI for assisting in the development of the codebase.*
+Most of the original code is replaced in the meantime. The ChatGPT Problem should be almost non-existent.
 
 
 
