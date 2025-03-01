@@ -16,7 +16,7 @@ from matplotlib import pyplot
 
 ### TODO ###
 #
-# Performance!! Multithreading is working, but still it is quite slow
+# fix cut_polygon. We need to completely remove all interiors without leaving the function.
 # maybe implement triangulation by myself?
 # What about a bbox which is not a square? -> aspect ratio
 
@@ -36,11 +36,14 @@ def main():
     water_height = 0.4
     green_height = 0.6
 
-    #bbox = (4.87123, 52.35893, 4.93389, 52.38351)  #Amsterdam
+    bbox = (4.87123, 52.35893, 4.93389, 52.38351)  #Amsterdam
     #bbox = (10.85891, 49.27478, 10.86771, 49.27973) #Suddersdorf
+    #bbox = generate_bbox_from_coords(49.27478, 10.85891, 49.27973, 10.86771) #Suddersdorf
     #bbox = (-1.266515, 51.757883, -1.263503, 51.759302) #Oxford University (Polygon with Holes)
     #bbox = (11.06375, 49.44759, 11.09048, 49.45976) #Nürnberg Zentrum
     #bbox = (11.07375, 49.40804, 11.11181, 49.42298) #Nürnberg Rangierbahnhof
+    #bbox = generate_bbox_from_coords(49.35939, 10.87368, 49.37005, 10.89294) #Buchschwabach
+    #bbox = (11.03946, 49.38656, 11.07800, 49.41215) # Nürnberg Hafen
     #bbox = (10.58769, 49.56984, 10.63133, 49.58768) # Neustadt Aisch
     #bbox = min Longitude , min Latitude , max Longitude , max Latitude 
     
