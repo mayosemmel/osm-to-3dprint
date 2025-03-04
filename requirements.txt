@@ -4,3 +4,4 @@ shapely
 trimesh 
 numpy-stl
 matplotlib
+geopandas

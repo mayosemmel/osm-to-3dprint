@@ -6,28 +6,42 @@ import concurrent.futures
 import multiprocessing
 import os
 import math
-import shapely.prepared
+import geopandas
 from stl import mesh
 from mpl_toolkits import mplot3d
 from matplotlib import pyplot
 
 
-import geopandas as gpd
-from math import sqrt
-from shapely import wkt
-
-
-def square_poly(lat, lon, distance=25000/sqrt(2)):
-    gs = gpd.GeoSeries(wkt.loads(f'POINT ({lon} {lat})'))
-    gdf = gpd.GeoDataFrame(geometry=gs)
-    gdf.crs='EPSG:4326'
+def square_bbox_from_center_point(lat, lon, distance):
+    gs = geopandas.GeoSeries(shapely.Point(lon, lat))
+    gdf = geopandas.GeoDataFrame(geometry=gs,crs='EPSG:4326')
     gdf = gdf.to_crs('EPSG:3857')
     res = gdf.buffer(
         distance=distance,
         cap_style=3,
     )
     returnpoly = res.to_crs('EPSG:4326').iloc[0]
+    return returnpoly.bounds
+
+def square_bbox_from_vertices(min_lat, min_lon, max_lat, max_lon):
+    gs = geopandas.GeoSeries(shapely.Polygon(((min_lon, min_lat),(max_lon, min_lat), (max_lon, max_lat), (min_lon, max_lat))))
+    gdf = geopandas.GeoDataFrame(geometry=gs,crs='EPSG:4326')
+    bounds = gdf.to_crs('EPSG:3857').bounds
     
+    side_length_x = bounds.maxx[0] - bounds.minx[0]
+    side_length_y = bounds.maxy[0] - bounds.miny[0]
+    side_length_avg = (side_length_x + side_length_y) / 2
+    center_x = bounds.minx[0] + ( side_length_x / 2 )
+    center_y = bounds.miny[0] + ( side_length_y / 2 )
+
+    gs = geopandas.GeoSeries(shapely.Point(center_x, center_y))
+    gdf = geopandas.GeoDataFrame(geometry=gs,crs='EPSG:3857')
+    res = gdf.buffer(
+        distance=side_length_avg,
+        cap_style=3,
+    )
+
+    returnpoly = res.to_crs('EPSG:4326').iloc[0]
     return returnpoly.bounds
 
 def fetch_location_data(bbox, location_type):
@@ -363,14 +377,14 @@ def preprocess_objects(object_list,bbox,target_size,scaling_factor):
         parameters.append([object,bbox,target_size,base_size,id])
         id += 1
     #Call Preprocessing Function in Multiprocessing
-    #print("starting preprocessing with", multiprocessing.cpu_count(), "CPU Cores")
-    #with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
-    #    meta_object_list = p.map(cut_order_scale,parameters)
+    print("starting preprocessing with", multiprocessing.cpu_count(), "CPU Cores")
+    with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
+        meta_object_list = p.map(cut_order_scale,parameters)
     ###################################
     #This is only for debugging without multiprocessing
-    meta_object_list = []
-    for param in parameters:
-        meta_object_list.append(cut_order_scale(param))
+    #meta_object_list = []
+    #for param in parameters:
+    #    meta_object_list.append(cut_order_scale(param))
     ######################################
     preprocessed_objects = []
     for meta_object in meta_object_list:
