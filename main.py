@@ -16,6 +16,8 @@ from matplotlib import pyplot
 ### TODO ###
 #
 # maybe implement triangulation by myself?
+# height scaling might look better if done logarythmic?
+# height scaling must be done according to x/y scaling
 
 
 
@@ -29,9 +31,9 @@ def main():
     #This highly depends on the astetics of the city/village you are trying to print. In Big Cities a value ~25 is mostly good. For villages values ~10 are good.
     max_building_height_mm = 10
     default_building_height = 9
-    path_height = 0.6
-    water_height = 0.4
-    green_height = 0.6
+    path_height = max_building_height_mm
+    water_height = max_building_height_mm
+    green_height = max_building_height_mm
 
     #Get BBox from vertices
     #bbox = square_bbox_from_vertices( min Latitude, min Longitude, max Latitude, max Longitude )

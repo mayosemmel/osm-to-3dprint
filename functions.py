@@ -50,7 +50,7 @@ def fetch_location_data(bbox, location_type):
         if location_type == "buildings":
             gdf = ox.features_from_bbox( bbox , tags = {'building': True, 'historic': ['citywalls']})
         if location_type == "paths":
-            gdf = ox.features_from_bbox( bbox , tags = {'highway': True, 'man_made': ['pier'], 'railway': True, 'place': ['islet']})
+            gdf = ox.features_from_bbox( bbox , tags = {'highway': True, 'man_made': ['pier'], 'railway': True})
         if location_type == "water":
             gdf = ox.features_from_bbox( bbox , tags = {'natural': ['water','reef'],'landuse': ['basin','salt_pond'], 'leisure': ['swimming_pool']})
         if location_type == "green":
@@ -59,7 +59,46 @@ def fetch_location_data(bbox, location_type):
         gdf = ([[shapely.Polygon(),0]])
     return gdf
 
-def get_building_height(row, default_height=10):
+def get_object_height(row, default_height=10):
+    #Areas like water and grass need to be on same level as base plate
+    #Areas like forest or scrub need to be elevated slightly
+    #Paths are also even with base plate
+    #TODO: What about bridges?!
+    special_area_attributes = ['natural', 'landuse', 'leisure', 'highway', 'man_made', 'railway']
+    for attr in special_area_attributes:
+        if attr in row:
+            if attr == 'natural' and (row[attr] == 'water' or row[attr] == 'reef' or row[attr] == 'grassland' or row[attr] == 'scrub' or row[attr] == 'wood'):
+                #Stuff that needs to be the same level as the base plate
+                return -1
+            elif attr == 'landuse' and (row[attr] == 'basin' or row[attr] == 'salt_pond' or row[attr] == 'grass' or row[attr] == 'allotments' or row[attr] == 'flowerbed' or row[attr] == 'village_green'):
+                return -1
+            elif attr == 'natural' and (row[attr] == 'scrub'):
+                #scrubs are between 1 and 2 meters high
+                return 1
+            elif attr == 'natural' and (row[attr] == 'wood'):
+                #woods probably about 25 meters high
+                return 25
+            elif attr == 'landuse' and (row[attr] == 'forest'):
+                return 25
+            elif attr == 'landuse' and (row[attr] == 'orchard'):
+                return 4
+            elif attr == 'landuse' and (row[attr] == 'plant_nursery' or row[attr] == 'vineyard' or row[attr] == 'recreation_ground'):
+                return 2
+            elif attr == 'landuse' and (row[attr] == 'meadow' or row[attr] == 'cemetery'):
+                return 0.5
+            elif attr == 'leisure' and (row[attr] == 'garden' or row[attr] == 'park'):
+                return -1
+            elif attr == 'leisure' and (row[attr] == 'pitch'):
+                return -1
+            elif attr == 'highway':
+                #Stuff that needs to be the same level as the base plate
+                return -1
+            elif attr == 'man_made' and (row[attr] == 'pier'):
+                #piers are maybe around 2 meter high?
+                return 2
+            elif attr == 'railway':
+                return 0.5
+
     default_citywall_height = default_height*1.7
     # Check for various height attributes
     height_attrs = ['height', 'building:height', 'building:levels', 'historic:city_walls']
@@ -288,7 +327,7 @@ def generate_object_list(gdf,default_height,max_height_mm):
     object_list = []
 
     # Calculate the maximum object height
-    max_building_height = gdf.apply(lambda row: get_building_height(row, default_height), axis=1).max()
+    max_building_height = gdf.apply(lambda row: get_object_height(row, default_height), axis=1).max()
     height_scale = max_height_mm / max_building_height
 
     for idx, row in gdf.iterrows():
@@ -362,7 +401,12 @@ def generate_object_list(gdf,default_height,max_height_mm):
                 object[0] = shapely.buffer(object[0], 0.000025)
         
         #Get Object height
-        object.append(get_building_height(row, default_height) * height_scale)
+        height = get_object_height(row, default_height)
+        if height > 0:
+            return_height = height * height_scale
+            object.append(height * height_scale)
+        else:
+            object.append(0.1)
 
         if object[0].area > 0:
             object_list.append(object)
