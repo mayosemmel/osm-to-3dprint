@@ -6,6 +6,7 @@ import concurrent.futures
 import multiprocessing
 import os
 import math
+import pandas
 import geopandas
 from stl import mesh
 from mpl_toolkits import mplot3d
@@ -67,6 +68,7 @@ def get_object_height(row, default_height=10):
     special_area_attributes = ['natural', 'landuse', 'leisure', 'highway', 'man_made', 'railway']
     for attr in special_area_attributes:
         if attr in row:
+            test = row[attr]
             if attr == 'natural' and (row[attr] == 'water' or row[attr] == 'reef' or row[attr] == 'grassland' or row[attr] == 'scrub' or row[attr] == 'wood'):
                 #Stuff that needs to be the same level as the base plate
                 return -1
@@ -77,9 +79,9 @@ def get_object_height(row, default_height=10):
                 return 1
             elif attr == 'natural' and (row[attr] == 'wood'):
                 #woods probably about 25 meters high
-                return 25
+                return 15
             elif attr == 'landuse' and (row[attr] == 'forest'):
-                return 25
+                return 15
             elif attr == 'landuse' and (row[attr] == 'orchard'):
                 return 4
             elif attr == 'landuse' and (row[attr] == 'plant_nursery' or row[attr] == 'vineyard' or row[attr] == 'recreation_ground'):
@@ -90,13 +92,13 @@ def get_object_height(row, default_height=10):
                 return -1
             elif attr == 'leisure' and (row[attr] == 'pitch'):
                 return -1
-            elif attr == 'highway':
+            elif attr == 'highway' and not pandas.isna(row[attr]):
                 #Stuff that needs to be the same level as the base plate
                 return -1
             elif attr == 'man_made' and (row[attr] == 'pier'):
                 #piers are maybe around 2 meter high?
                 return 2
-            elif attr == 'railway':
+            elif attr == 'railway' and not pandas.isna(row[attr]):
                 return 0.5
 
     default_citywall_height = default_height*1.7
@@ -320,15 +322,11 @@ def cut_polygon(geometry):
     return geoms_without_interiors
 
 
-def generate_object_list(gdf,default_height,max_height_mm):
+def generate_object_list(gdf,default_height,height_scale):
     #Create a List of 3D Geometries (objects) out of the OSM Data
     #Geometries need to be preprocessed (Correct Type, No Holes, vertices in clockwise order, scaling, ...)
     
     object_list = []
-
-    # Calculate the maximum object height
-    max_building_height = gdf.apply(lambda row: get_object_height(row, default_height), axis=1).max()
-    height_scale = max_height_mm / max_building_height
 
     for idx, row in gdf.iterrows():
         #We will have a geometry in the the first place [0] and the height in the second place [1]
@@ -343,7 +341,7 @@ def generate_object_list(gdf,default_height,max_height_mm):
         # If Object is a string convert to polygon
         if isinstance(object[0], shapely.geometry.LineString):
             #manual definition of path width depending on type
-            if hasattr(row,"highway"):
+            if hasattr(row,"highway") and not pandas.isna(row.highway):
                 if row.highway == "motorway":
                     object[0] = shapely.buffer(object[0], 0.0001)
                 elif row.highway == "trunk":
@@ -403,8 +401,7 @@ def generate_object_list(gdf,default_height,max_height_mm):
         #Get Object height
         height = get_object_height(row, default_height)
         if height > 0:
-            return_height = height * height_scale
-            object.append(height * height_scale)
+            object.append(height * 1000 * height_scale) #height in meter * 1000 = height in millimeter; height in millimeter gets then scaled down
         else:
             object.append(0.1)
 
@@ -412,9 +409,9 @@ def generate_object_list(gdf,default_height,max_height_mm):
             object_list.append(object)
     return(object_list)
         
-def preprocess_objects(object_list,bbox,target_size,scaling_factor):
+def preprocess_objects(object_list,bbox,target_size,base_scaling_factor):
     parameters = []
-    base_size = target_size*scaling_factor
+    base_size = target_size*base_scaling_factor
     id = 0
     for object in object_list:
         #Create a List with all parameters for multiprocessing
@@ -483,11 +480,11 @@ def create_add_faces(base_index, exterior_coords,vertices,faces, id=0):
 
     return faces
 
-def prepare_3d_mesh(preprocessed_objects, target_size, scaling_factor, base_thickness=2, base_generation=True, object_generation=True):
+def prepare_3d_mesh(preprocessed_objects, target_size, base_scaling_factor, base_thickness=2, base_generation=True, object_generation=True):
     #Generation of 3D Mesh out of 2D Shapes with height
     vertices = []
     faces = []
-    base_size = target_size * scaling_factor
+    base_size = target_size * base_scaling_factor
 
     if base_generation == True:
         # Generate solid base
@@ -498,7 +495,7 @@ def prepare_3d_mesh(preprocessed_objects, target_size, scaling_factor, base_thic
         faces.extend(base_faces)
     else:
         # Generate solid base
-        base_vertices, base_faces = create_solid_base(target_size, base_thickness, ((scaling_factor - 1) / 2) * target_size)
+        base_vertices, base_faces = create_solid_base(target_size, base_thickness, ((base_scaling_factor - 1) / 2) * target_size)
         # only half array will be used since we only need top OR bottom for the 2D object.
         base_geometry = create_geometry(base_vertices,range(int(len(base_vertices)/2)))
 

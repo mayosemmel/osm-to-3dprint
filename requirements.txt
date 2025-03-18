@@ -5,3 +5,5 @@ trimesh
 numpy-stl
 matplotlib
 geopandas
+geopy
+pandas

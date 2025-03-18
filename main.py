@@ -6,6 +6,7 @@ import concurrent.futures
 import multiprocessing
 import os
 import math
+import geopy.distance
 from functions import *
 from stl import mesh
 from mpl_toolkits import mplot3d
@@ -27,13 +28,11 @@ def main():
     #Thickness of Base Plate in mm
     base_thickness = 2
     #everything bigger than one will create a "frame" around the actual landscape
-    scaling_factor = 1.1
-    #This highly depends on the astetics of the city/village you are trying to print. In Big Cities a value ~25 is mostly good. For villages values ~10 are good.
-    max_building_height_mm = 10
-    default_building_height = 9
-    path_height = max_building_height_mm
-    water_height = max_building_height_mm
-    green_height = max_building_height_mm
+    base_scaling_factor = 1.1
+    #How much higher than correct scaling should the buildings be?
+    #With bigger Parts of Land this factor should be higher
+    height_scaling_factor = 1.2
+    default_building_height = 9 # in meter
 
     #Get BBox from vertices
     #bbox = square_bbox_from_vertices( min Latitude, min Longitude, max Latitude, max Longitude )
@@ -44,7 +43,6 @@ def main():
     bbox = square_bbox_from_vertices(49.40804, 11.07375, 49.42298, 11.11181) #Nürnberg Rangierbahnhof
     #bbox = square_bbox_from_vertices(49.38656, 11.03946, 49.41215, 11.07800) # Nürnberg Hafen
     #bbox = square_bbox_from_vertices(49.56984, 10.58769, 49.58768, 10.63133) # Neustadt Aisch
-    
     
     #Get BBox from center point and square size
     #bbox = square_bbox_from_center_point(Latitude, Longitude, Square Size in Meter)
@@ -59,12 +57,24 @@ def main():
     water = True
     green = True
     
+    #Get the Scaling Factor of the whole model, use this block if the scaling should be correct (same factor for lat/long and height).
+    long1, lat1, long2, lat2 = bbox
+    diagonale = geopy.distance.geodesic((lat1, long1), (lat2, long2)).km
+    side_length = diagonale / math.sqrt(2)
+    model_scaling_factor = (target_size / 1000) / (side_length * 1000) # mm / 1000 = meter ## km * 1000 = meter
+    height_scale = model_scaling_factor * height_scaling_factor
+
+    #Define the height scaling. If we scale correctly buildings basically don't have any heights.
+    #We set the default building to 1 mm and set the rest accordingly
+    #height_scale = 1 / ( default_building_height * 1000 )
+    #height_scale = 0.01
+
     #Preparation of 2D Object with height as metadata for later processing
 
     #Generation of Buildings
     if buildings:
         gdf = fetch_location_data(bbox, "buildings")
-        object_list_buildings = generate_object_list(gdf,default_building_height,max_building_height_mm)
+        object_list_buildings = generate_object_list(gdf,default_building_height,height_scale)
     else:
         #for further processing we need some "empty" Polygon as dummy data
         object_list_buildings = ([[shapely.Polygon(),0]])
@@ -72,7 +82,7 @@ def main():
     #Generation of Paths
     if paths:
         gdf = fetch_location_data(bbox, "paths")
-        object_list_paths = generate_object_list(gdf,default_building_height,path_height)
+        object_list_paths = generate_object_list(gdf,default_building_height,height_scale)
     else:
         #for further processing we need some "empty" Polygon as dummy data
         object_list_paths = ([[shapely.Polygon(),0]])
@@ -80,7 +90,7 @@ def main():
     #Generation of Water
     if water:
         gdf = fetch_location_data(bbox, "water")
-        object_list_water = generate_object_list(gdf,default_building_height,water_height)
+        object_list_water = generate_object_list(gdf,default_building_height,height_scale)
     else:
         #for further processing we need some "empty" Polygon as dummy data
         object_list_water = ([[shapely.Polygon(),0]])
@@ -88,7 +98,7 @@ def main():
     #Generation of "Green Areas" like Forest and Meadow
     if green:
         gdf = fetch_location_data(bbox, "green")
-        object_list_greens = generate_object_list(gdf,default_building_height,green_height)
+        object_list_greens = generate_object_list(gdf,default_building_height,height_scale)
     else:
         #for further processing we need some "empty" Polygon as dummy data
         object_list_greens = ([[shapely.Polygon(),0]])
@@ -100,35 +110,35 @@ def main():
 
     #Generation of Base Plate
     if base_plate:
-        vertices, faces = prepare_3d_mesh(False,target_size, scaling_factor, base_thickness, base_generation=True, object_generation=False)
+        vertices, faces = prepare_3d_mesh(False,target_size, base_scaling_factor, base_thickness, base_generation=True, object_generation=False)
         save_to_stl(vertices, faces, 'export/standalone_base.stl')
         print(f"generation of base plate completed")
 
     #Generation of Buildings
     if buildings and len(object_list_buildings) > 0:
-        preprocessed_buildings = preprocess_objects(object_list_buildings,bbox,target_size,scaling_factor)
-        vertices, faces = prepare_3d_mesh(preprocessed_buildings, target_size, scaling_factor, base_generation=False, object_generation=True)
+        preprocessed_buildings = preprocess_objects(object_list_buildings,bbox,target_size,base_scaling_factor)
+        vertices, faces = prepare_3d_mesh(preprocessed_buildings, target_size, base_scaling_factor, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/buildings_without_base.stl')
         print(f"generation of buildings completed")
 
     #Generation of Paths
     if paths and len(object_list_paths) > 0:
-        preprocessed_paths = preprocess_objects(object_list_paths,bbox,target_size,scaling_factor)
-        vertices, faces = prepare_3d_mesh(preprocessed_paths, target_size, scaling_factor, base_generation=False, object_generation=True)
+        preprocessed_paths = preprocess_objects(object_list_paths,bbox,target_size,base_scaling_factor)
+        vertices, faces = prepare_3d_mesh(preprocessed_paths, target_size, base_scaling_factor, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/paths_without_base.stl')
         print(f"generation of paths completed")
 
     #Generation of Water
     if water and len(object_list_water) > 0:
-        preprocessed_water = preprocess_objects(object_list_water,bbox,target_size,scaling_factor)
-        vertices, faces = prepare_3d_mesh(preprocessed_water, target_size, scaling_factor, base_generation=False, object_generation=True)
+        preprocessed_water = preprocess_objects(object_list_water,bbox,target_size,base_scaling_factor)
+        vertices, faces = prepare_3d_mesh(preprocessed_water, target_size, base_scaling_factor, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/water_without_base.stl')
         print(f"generation of water completed")
 
     #Generation of "Green Areas" like Forest and Meadow
     if green and len(object_list_greens) > 0:
-        preprocessed_greens = preprocess_objects(object_list_greens,bbox,target_size,scaling_factor)
-        vertices, faces = prepare_3d_mesh(preprocessed_greens, target_size, scaling_factor, base_generation=False, object_generation=True)
+        preprocessed_greens = preprocess_objects(object_list_greens,bbox,target_size,base_scaling_factor)
+        vertices, faces = prepare_3d_mesh(preprocessed_greens, target_size, base_scaling_factor, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/greens_without_base.stl')
         print(f"generation of greens completed")
 
