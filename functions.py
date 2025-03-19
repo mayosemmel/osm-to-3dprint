@@ -239,11 +239,11 @@ def create_geometry(vertices,indicies):
         geometry_coords.append((x,y))
     return shapely.Polygon(geometry_coords)
 
-def create_vertices_list(exterior_coords, base_thickness, height):
+def create_vertices_list(exterior_coords, base_thickness, height, height_offset=1):
     vertices_list = []
     for coord in exterior_coords:
-        v_bottom = (coord[0], coord[1], base_thickness)
-        v_top = (coord[0], coord[1], height + base_thickness)
+        v_bottom = (coord[0], coord[1], base_thickness + height_offset)
+        v_top = (coord[0], coord[1], height + base_thickness + height_offset)
         vertices_list.extend([v_bottom, v_top])
     return vertices_list
 
@@ -401,9 +401,16 @@ def generate_object_list(gdf,default_height,height_scale):
         #Get Object height
         height = get_object_height(row, default_height)
         if height > 0:
-            object.append(height * 1000 * height_scale) #height in meter * 1000 = height in millimeter; height in millimeter gets then scaled down
+            object_height = height * 1000 * height_scale
+            if object_height > 0.5:
+                object.append(object_height) #height in meter * 1000 = height in millimeter; height in millimeter gets then scaled down
+                object.append(1) #height offset = 1 since it is on top of the base
+            else:
+                object.append(object_height + 1) #height in meter * 1000 = height in millimeter; height in millimeter gets then scaled down
+                object.append(0) #height offset = 0 since it needs to be embedded in base, the embedded millimeter is added to the object height
         else:
-            object.append(0.1)
+            object.append(1) #It is 1 mm deep embedded in base
+            object.append(0) #height offset = 0 since it needs to be embedded in base, the embedded millimeter is added to the object height
 
         if object[0].area > 0:
             object_list.append(object)
@@ -458,12 +465,12 @@ def cut_order_scale(args):
             if isinstance(valid_geom, shapely.geometry.MultiPolygon):
                 for geom in valid_geom.geoms:
                     if isinstance(geom,shapely.geometry.Polygon):
-                        processed_objects.append([geom,object[1]])
+                        processed_objects.append([geom,object[1],object[2]])
             else:
                 if isinstance(valid_geom,shapely.geometry.Polygon):
-                    processed_objects.append([valid_geom,object[1]])
+                    processed_objects.append([valid_geom,object[1],object[2]])
         else:
-            processed_objects.append([geometry,object[1]])
+            processed_objects.append([geometry,object[1],object[2]])
     return processed_objects
 
 def create_add_faces(base_index, exterior_coords,vertices,faces, id=0):
@@ -480,7 +487,7 @@ def create_add_faces(base_index, exterior_coords,vertices,faces, id=0):
 
     return faces
 
-def prepare_3d_mesh(preprocessed_objects, target_size, base_scaling_factor, base_thickness=2, base_generation=True, object_generation=True):
+def prepare_3d_mesh(preprocessed_objects, target_size, base_scaling_factor, base_thickness, base_generation=True, object_generation=False):
     #Generation of 3D Mesh out of 2D Shapes with height
     vertices = []
     faces = []
@@ -506,6 +513,7 @@ def prepare_3d_mesh(preprocessed_objects, target_size, base_scaling_factor, base
             print(f"processing object {id} of {len(preprocessed_objects)}")
             exterior_coords = list(object[0].exterior.coords)
             height = object[1]
+            height_offset = object[2]
             #Remove any overhangs over the base plate. This is required since some objects start within the bbox but end outside of it.
             #If this is the case we have object which are a lot to big and are not printable.
             #After Cleanup the Vertices of the final object are added to the whole list
@@ -516,13 +524,13 @@ def prepare_3d_mesh(preprocessed_objects, target_size, base_scaling_factor, base
                         exterior_coords = list(polygon.exterior.coords)
                         #Get Base Index (Before adding new vertices of this object)
                         base_index = len(vertices)
-                        vertices.extend(create_vertices_list(exterior_coords, base_thickness, height))
+                        vertices.extend(create_vertices_list(exterior_coords, base_thickness, height, height_offset))
                         faces = create_add_faces(base_index, exterior_coords, vertices, faces)
                 else:
                     exterior_coords = list(intersection.exterior.coords)
                     #Get Base Index (Before adding new vertices of this object)
                     base_index = len(vertices)
-                    vertices.extend(create_vertices_list(exterior_coords, base_thickness, height))
+                    vertices.extend(create_vertices_list(exterior_coords, base_thickness, height, height_offset))
                     faces = create_add_faces(base_index, exterior_coords, vertices, faces)
             else:
                 continue
@@ -553,6 +561,17 @@ def cut_two_categories(base_category,cutting_category,detect_islands=False):
     new_object_list = []
     for base_object in base_category:
         for cutting_object in cutting_category:
+            base_low =  base_object[2]
+            base_high = base_object[1] + base_object[2]
+            cutting_low = cutting_object[2]
+            cutting_high = cutting_object[1] + cutting_object[2]
+            if not (
+                (base_low >= cutting_low and base_low <= cutting_high) or
+                (base_high >= cutting_low and base_high <= cutting_high) or
+                (cutting_low >= base_low and cutting_low <= base_high) or
+                (cutting_high >= base_low and cutting_high <= base_high)
+            ):
+                continue
             if shapely.intersects(base_object[0],cutting_object[0]):
                 #Island Detection Example:
                 #When we remove the water area from the green area and no area is left, the green area IS fully surroundend and therefore is an island.
@@ -564,14 +583,14 @@ def cut_two_categories(base_category,cutting_category,detect_islands=False):
         #after all cuts we append the object to the list
         if isinstance(base_object[0], shapely.geometry.MultiPolygon):
             for polygon in base_object[0].geoms:
-                new_object_list.append(([polygon,base_object[1]]))
+                new_object_list.append(([polygon,base_object[1],base_object[2]]))
         if isinstance(base_object[0], shapely.geometry.Polygon):
             new_object_list.append(base_object)
     return new_object_list
 
 
 
-def cut_all_categories(object_list_buildings,object_list_paths,object_list_water,object_list_greens):
+def cut_all_categories(object_list_buildings,object_list_paths,object_list_water,object_list_greens,object_list_base):
     #If water is in a green area (like a river or a fointan) or a green is fully enclosed by water (an island) we need to cut the other parts. Otherwise fountains get lost in the end-result.
     #Since we need to implement this cutting algorythm anyways we also cut buildings and paths out of the other objects to prevent overlapping and have a nicer print result.
     #Order of objects from top to bottom:
@@ -579,6 +598,7 @@ def cut_all_categories(object_list_buildings,object_list_paths,object_list_water
     # paths
     # water (except the green is fully enclosed by water)
     # green
+    # base
 
     #remove stuff from water areas
     object_list_water = cut_two_categories(object_list_water,object_list_paths)
@@ -589,4 +609,10 @@ def cut_all_categories(object_list_buildings,object_list_paths,object_list_water
     object_list_greens = cut_two_categories(object_list_greens,object_list_paths)
     object_list_greens = cut_two_categories(object_list_greens,object_list_water)
 
-    return(object_list_buildings,object_list_paths,object_list_water,object_list_greens)
+    #embed stuff into base plate
+    #object_list_base = cut_two_categories(object_list_base,object_list_buildings)
+    object_list_base = cut_two_categories(object_list_base,object_list_paths)
+    object_list_base = cut_two_categories(object_list_base,object_list_water)
+    object_list_base = cut_two_categories(object_list_base,object_list_greens)
+
+    return(object_list_buildings,object_list_paths,object_list_water,object_list_greens,object_list_base)

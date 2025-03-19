@@ -25,7 +25,7 @@ from matplotlib import pyplot
 def main():
     #size of print in mm excluding "frame" overhang
     target_size = 180
-    #Thickness of Base Plate in mm
+    #Thickness of Base Plate in mm, needs to be bigger than 1 mm
     base_thickness = 2
     #everything bigger than one will create a "frame" around the actual landscape
     base_scaling_factor = 1.1
@@ -64,12 +64,24 @@ def main():
     model_scaling_factor = (target_size / 1000) / (side_length * 1000) # mm / 1000 = meter ## km * 1000 = meter
     height_scale = model_scaling_factor * height_scaling_factor
 
-    #Define the height scaling. If we scale correctly buildings basically don't have any heights.
-    #We set the default building to 1 mm and set the rest accordingly
-    #height_scale = 1 / ( default_building_height * 1000 )
-    #height_scale = 0.01
-
     #Preparation of 2D Object with height as metadata for later processing
+
+    #Generation of Base Plate
+    #We have a Part of the Base Plate which is solid, this will be generated automatically
+    #The first mm on the upper side needs to be cut by paths and stuff like that so it is on the same level as the base plate
+
+    if base_plate:
+        if base_thickness <= 1:
+            raise Exception("Invalid Base Thickness. Needs to be bigger than 1 mm.")
+        object_list_base = [[shapely.Polygon((
+            (0, 0),
+            (target_size * base_scaling_factor, 0),
+            (target_size * base_scaling_factor, target_size * base_scaling_factor),
+            (0, target_size * base_scaling_factor))),1,0]]
+        base_thickness = base_thickness - 1
+    else:
+        #for further processing we need some "empty" Polygon as dummy data
+        object_list_base = ([[shapely.Polygon(),0,0]])
 
     #Generation of Buildings
     if buildings:
@@ -77,7 +89,7 @@ def main():
         object_list_buildings = generate_object_list(gdf,default_building_height,height_scale)
     else:
         #for further processing we need some "empty" Polygon as dummy data
-        object_list_buildings = ([[shapely.Polygon(),0]])
+        object_list_buildings = ([[shapely.Polygon(),0,0]])
     
     #Generation of Paths
     if paths:
@@ -85,7 +97,7 @@ def main():
         object_list_paths = generate_object_list(gdf,default_building_height,height_scale)
     else:
         #for further processing we need some "empty" Polygon as dummy data
-        object_list_paths = ([[shapely.Polygon(),0]])
+        object_list_paths = ([[shapely.Polygon(),0,0]])
     
     #Generation of Water
     if water:
@@ -93,7 +105,7 @@ def main():
         object_list_water = generate_object_list(gdf,default_building_height,height_scale)
     else:
         #for further processing we need some "empty" Polygon as dummy data
-        object_list_water = ([[shapely.Polygon(),0]])
+        object_list_water = ([[shapely.Polygon(),0,0]])
     
     #Generation of "Green Areas" like Forest and Meadow
     if green:
@@ -101,44 +113,45 @@ def main():
         object_list_greens = generate_object_list(gdf,default_building_height,height_scale)
     else:
         #for further processing we need some "empty" Polygon as dummy data
-        object_list_greens = ([[shapely.Polygon(),0]])
+        object_list_greens = ([[shapely.Polygon(),0,0]])
 
     #If water is in a green area (like a river or a fointan) or a green is fully enclosed by water (an island) we need to cut the other parts. Otherwise fountains get lost in the end-result.
     #Since we need to implement this cutting algorythm anyways we also cut buildings and paths out of the other objects to prevent overlapping and have a nicer print result.
     print(f"starting to cut the layer categories with each other")
-    object_list_buildings,object_list_paths,object_list_water,object_list_greens = cut_all_categories(object_list_buildings,object_list_paths,object_list_water,object_list_greens)
+    object_list_buildings,object_list_paths,object_list_water,object_list_greens,object_list_base = cut_all_categories(object_list_buildings,object_list_paths,object_list_water,object_list_greens,object_list_base)
 
     #Generation of Base Plate
     if base_plate:
-        vertices, faces = prepare_3d_mesh(False,target_size, base_scaling_factor, base_thickness, base_generation=True, object_generation=False)
+        preprocessed_base = preprocess_objects(object_list_base,bbox,target_size,base_scaling_factor)
+        vertices, faces = prepare_3d_mesh(preprocessed_base, target_size, base_scaling_factor, base_thickness, base_generation=True, object_generation=True)
         save_to_stl(vertices, faces, 'export/standalone_base.stl')
         print(f"generation of base plate completed")
 
     #Generation of Buildings
     if buildings and len(object_list_buildings) > 0:
         preprocessed_buildings = preprocess_objects(object_list_buildings,bbox,target_size,base_scaling_factor)
-        vertices, faces = prepare_3d_mesh(preprocessed_buildings, target_size, base_scaling_factor, base_generation=False, object_generation=True)
+        vertices, faces = prepare_3d_mesh(preprocessed_buildings, target_size, base_scaling_factor, base_thickness, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/buildings_without_base.stl')
         print(f"generation of buildings completed")
 
     #Generation of Paths
     if paths and len(object_list_paths) > 0:
         preprocessed_paths = preprocess_objects(object_list_paths,bbox,target_size,base_scaling_factor)
-        vertices, faces = prepare_3d_mesh(preprocessed_paths, target_size, base_scaling_factor, base_generation=False, object_generation=True)
+        vertices, faces = prepare_3d_mesh(preprocessed_paths, target_size, base_scaling_factor, base_thickness, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/paths_without_base.stl')
         print(f"generation of paths completed")
 
     #Generation of Water
     if water and len(object_list_water) > 0:
         preprocessed_water = preprocess_objects(object_list_water,bbox,target_size,base_scaling_factor)
-        vertices, faces = prepare_3d_mesh(preprocessed_water, target_size, base_scaling_factor, base_generation=False, object_generation=True)
+        vertices, faces = prepare_3d_mesh(preprocessed_water, target_size, base_scaling_factor, base_thickness, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/water_without_base.stl')
         print(f"generation of water completed")
 
     #Generation of "Green Areas" like Forest and Meadow
     if green and len(object_list_greens) > 0:
         preprocessed_greens = preprocess_objects(object_list_greens,bbox,target_size,base_scaling_factor)
-        vertices, faces = prepare_3d_mesh(preprocessed_greens, target_size, base_scaling_factor, base_generation=False, object_generation=True)
+        vertices, faces = prepare_3d_mesh(preprocessed_greens, target_size, base_scaling_factor, base_thickness, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/greens_without_base.stl')
         print(f"generation of greens completed")
 
