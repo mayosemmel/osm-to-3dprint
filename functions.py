@@ -51,8 +51,7 @@ def fetch_location_data(bbox, location_type):
         if location_type == "buildings":
             gdf = ox.features_from_bbox( bbox , tags = {'building': True, 'historic': ['citywalls']})
         if location_type == "paths":
-            #gdf = ox.features_from_bbox( bbox , tags = {'highway': True, 'man_made': ['pier'], 'railway': True})
-            gdf = ox.features_from_bbox( bbox , tags = {'railway': True})
+            gdf = ox.features_from_bbox( bbox , tags = {'highway': True, 'man_made': ['pier'], 'railway': True})
         if location_type == "water":
             gdf = ox.features_from_bbox( bbox , tags = {'natural': ['water','reef'],'landuse': ['basin','salt_pond'], 'leisure': ['swimming_pool']})
         if location_type == "green":
@@ -69,6 +68,7 @@ def get_object_height(row, default_height=10):
     special_area_attributes = ['natural', 'landuse', 'leisure', 'highway', 'man_made', 'railway']
     for attr in special_area_attributes:
         if attr in row:
+            test = row[attr]
             if attr == 'natural' and (row[attr] == 'water' or row[attr] == 'reef' or row[attr] == 'grassland' or row[attr] == 'scrub' or row[attr] == 'wood'):
                 #Stuff that needs to be the same level as the base plate
                 return -1
@@ -401,12 +401,12 @@ def generate_object_list(gdf,default_height,height_scale):
         #Get Object height
         height = get_object_height(row, default_height)
         if height > 0:
-            object_height = height * 1000 * height_scale #height in meter * 1000 = height in millimeter; height in millimeter gets then scaled down
+            object_height = height * 1000 * height_scale
             if object_height > 0.5:
-                object.append(object_height) 
+                object.append(object_height) #height in meter * 1000 = height in millimeter; height in millimeter gets then scaled down
                 object.append(1) #height offset = 1 since it is on top of the base
             else:
-                object.append(object_height + 1)
+                object.append(object_height + 1) #height in meter * 1000 = height in millimeter; height in millimeter gets then scaled down
                 object.append(0) #height offset = 0 since it needs to be embedded in base, the embedded millimeter is added to the object height
         else:
             object.append(1) #It is 1 mm deep embedded in base

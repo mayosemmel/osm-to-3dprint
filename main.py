@@ -52,10 +52,10 @@ def main():
     
     #Define what should be generated
     base_plate = True
-    buildings = False
+    buildings = True
     paths = True
-    water = False
-    green = False
+    water = True
+    green = True
     
     #Get the Scaling Factor of the whole model, use this block if the scaling should be correct (same factor for lat/long and height).
     long1, lat1, long2, lat2 = bbox
