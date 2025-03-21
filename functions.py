@@ -389,10 +389,10 @@ def generate_object_list(gdf,default_height,height_scale):
                 else:
                     print(f"unclassified path width for type {row.highway}")
                     object[0] = shapely.buffer(object[0], 0.000025)
-            elif hasattr(row,"man_made"):
+            elif hasattr(row,"man_made") and not pandas.isna(row.man_made):
                 if row.man_made == "pier":
                     object[0] = shapely.buffer(object[0], 0.000004)
-            elif hasattr(row,"railway") and isinstance(row.railway,str):
+            elif hasattr(row,"railway") and not pandas.isna(row.railway):
                 if not row.tunnel == "yes":
                     object[0] = shapely.buffer(object[0], 0.00002)
             else:
