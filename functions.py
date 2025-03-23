@@ -428,6 +428,8 @@ def preprocess_objects(object_list,bbox,target_size,base_scaling_factor):
     print("starting preprocessing with", multiprocessing.cpu_count(), "CPU Cores")
     with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
         meta_object_list = p.map(cut_order_scale,parameters)
+        p.close()
+        p.join()
     ###################################
     #This is only for debugging without multiprocessing
     #meta_object_list = []
@@ -557,35 +559,64 @@ def save_to_stl(vertices, faces, filename):
 
     mesh_data.save(filename)
 
+def cut_object_by_object_list(args):
+    new_object_list = []
+    base_object, cutting_list, detect_islands = args
+    id=1
+    for cutting_object in cutting_list:
+        base_low =  base_object[2]
+        base_high = base_object[1] + base_object[2]
+        cutting_low = cutting_object[2]
+        cutting_high = cutting_object[1] + cutting_object[2]
+        if not (
+            (base_low >= cutting_low and base_low <= cutting_high) or
+            (base_high >= cutting_low and base_high <= cutting_high) or
+            (cutting_low >= base_low and cutting_low <= base_high) or
+            (cutting_high >= base_low and cutting_high <= base_high)
+        ):
+            id += 1
+            continue
+        if shapely.intersects(base_object[0],cutting_object[0]):
+            #Island Detection Example:
+            #When we remove the water area from the green area and no area is left, the green area IS fully surroundend and therefore is an island.
+            if detect_islands:
+                if not shapely.difference(cutting_object[0],base_object[0]).area == 0:
+                    id += 1
+                    continue
+            base_object[0] = shapely.difference(base_object[0],cutting_object[0])
+        if(base_object[0].area == 0):
+            id += 1
+            continue
+        print(f"performing cut {id} of {len(cutting_list)} in current object")
+        id += 1
+    #after all cuts we append the object to the list
+    if isinstance(base_object[0], shapely.geometry.MultiPolygon):
+        for polygon in base_object[0].geoms:
+            new_object_list.append(([polygon,base_object[1],base_object[2]]))
+    if isinstance(base_object[0], shapely.geometry.Polygon):
+        new_object_list.append(base_object)
+    return new_object_list
+
 def cut_two_categories(base_category,cutting_category,detect_islands=False):
     new_object_list = []
     for base_object in base_category:
-        for cutting_object in cutting_category:
-            base_low =  base_object[2]
-            base_high = base_object[1] + base_object[2]
-            cutting_low = cutting_object[2]
-            cutting_high = cutting_object[1] + cutting_object[2]
-            if not (
-                (base_low >= cutting_low and base_low <= cutting_high) or
-                (base_high >= cutting_low and base_high <= cutting_high) or
-                (cutting_low >= base_low and cutting_low <= base_high) or
-                (cutting_high >= base_low and cutting_high <= base_high)
-            ):
-                continue
-            if shapely.intersects(base_object[0],cutting_object[0]):
-                #Island Detection Example:
-                #When we remove the water area from the green area and no area is left, the green area IS fully surroundend and therefore is an island.
-                if detect_islands and not shapely.difference(cutting_object[0],base_object[0]).area == 0:
-                    continue
-                base_object[0] = shapely.difference(base_object[0],cutting_object[0])
-        if(base_object[0].area == 0):
-            continue
-        #after all cuts we append the object to the list
-        if isinstance(base_object[0], shapely.geometry.MultiPolygon):
-            for polygon in base_object[0].geoms:
-                new_object_list.append(([polygon,base_object[1],base_object[2]]))
-        if isinstance(base_object[0], shapely.geometry.Polygon):
-            new_object_list.append(base_object)
+        parameters = []
+        #Create a List with all parameters for multiprocessing
+        parameters.append([base_object,cutting_category,detect_islands])
+    #Call Function in Multiprocessing
+    with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
+        meta_object_list = p.map(cut_object_by_object_list,parameters)
+        p.close()
+        p.join()
+    ###################################
+    #This is only for debugging without multiprocessing
+    #meta_object_list = []
+    #for param in parameters:
+    #    meta_object_list.append(cut_object_by_object_list(param))
+    ######################################
+
+    for meta_object in meta_object_list:
+        new_object_list.extend(meta_object)
     return new_object_list
 
 
@@ -609,8 +640,10 @@ def cut_all_categories(object_list_buildings,object_list_paths,object_list_water
     object_list_greens = cut_two_categories(object_list_greens,object_list_paths)
     object_list_greens = cut_two_categories(object_list_greens,object_list_water)
 
+    #sometimes buildings and paths are overlapping
+    #object_list_paths = cut_two_categories(object_list_paths,object_list_buildings)
+
     #embed stuff into base plate
-    #object_list_base = cut_two_categories(object_list_base,object_list_buildings)
     object_list_base = cut_two_categories(object_list_base,object_list_paths)
     object_list_base = cut_two_categories(object_list_base,object_list_water)
     object_list_base = cut_two_categories(object_list_base,object_list_greens)
