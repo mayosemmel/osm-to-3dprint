@@ -416,7 +416,7 @@ def generate_object_list(gdf,default_height,height_scale):
             object_list.append(object)
     return(object_list)
         
-def preprocess_objects(object_list,bbox,target_size,base_scaling_factor):
+def preprocess_objects_meta(object_list,bbox,target_size,base_scaling_factor, scale=True):
     parameters = []
     base_size = target_size*base_scaling_factor
     id = 0
@@ -427,21 +427,25 @@ def preprocess_objects(object_list,bbox,target_size,base_scaling_factor):
     #Call Preprocessing Function in Multiprocessing
     print("starting preprocessing with", multiprocessing.cpu_count(), "CPU Cores")
     with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
-        meta_object_list = p.map(cut_order_scale,parameters)
+        meta_object_list = p.map(preprocess_objects,parameters)
+        p.close()
+        p.join()
     ###################################
     #This is only for debugging without multiprocessing
     #meta_object_list = []
     #for param in parameters:
-    #    meta_object_list.append(cut_order_scale(param))
+    #    meta_object_list.append(preprocess_objects(param))
     ######################################
     preprocessed_objects = []
     for meta_object in meta_object_list:
             for object in meta_object:
+                if scale:
+                    object[0] = scale_polygon(object[0].exterior.coords,bbox,target_size,base_size)
                 preprocessed_objects.append(object)
     print(f"preprocessing done")
     return preprocessed_objects
 
-def cut_order_scale(args):
+def preprocess_objects(args):
     object,bbox,target_size,base_size,id = args
     print(f"preprocessing id: {id}")
     processed_objects = []
@@ -457,8 +461,6 @@ def cut_order_scale(args):
         if shapely.algorithms.cga.signed_area(geometry.exterior) > 0:
             geometry = shapely.Polygon(reversed(geometry.exterior.coords))
 
-        #scale object
-        geometry = scale_polygon(geometry.exterior.coords,bbox,target_size,base_size)
         #in case the geometry is invalid we try to fix it
         if not shapely.is_valid(geometry):
             valid_geom = shapely.make_valid(geometry)
@@ -500,6 +502,29 @@ def prepare_3d_mesh(preprocessed_objects, target_size, base_scaling_factor, base
         base_geometry = create_geometry(base_vertices,range(int(len(base_vertices)/2)))
         vertices.extend(base_vertices)
         faces.extend(base_faces)
+
+        offset_inner_base = (target_size * (base_scaling_factor - 1)) / 2
+        inner_base = shapely.Polygon((
+            (offset_inner_base, offset_inner_base),
+            (target_size + offset_inner_base, offset_inner_base),
+            (target_size + offset_inner_base, target_size + offset_inner_base),
+            (offset_inner_base, target_size + offset_inner_base)))
+        full_base = shapely.Polygon((
+            (0, 0),
+            (target_size * base_scaling_factor, 0),
+            (target_size * base_scaling_factor, target_size * base_scaling_factor),
+            (0, target_size * base_scaling_factor)))
+        base_frame = shapely.difference(full_base,inner_base)
+        line = shapely.LineString([[0,0], [target_size * base_scaling_factor,target_size * base_scaling_factor]])
+        base_frame_objects = []
+        for base_frame_part in shapely.ops.split(base_frame, line).geoms:
+            base_frame_objects.append([base_frame_part,1,0])
+        for object in base_frame_objects:
+            exterior_coords = list(object[0].exterior.coords)
+            #Get Base Index (Before adding new vertices of this object)
+            base_index = len(vertices)
+            vertices.extend(create_vertices_list(exterior_coords, base_thickness, object[1], object[2]))
+            faces = create_add_faces(base_index, exterior_coords, vertices, faces)        
     else:
         # Generate solid base
         base_vertices, base_faces = create_solid_base(target_size, base_thickness, ((base_scaling_factor - 1) / 2) * target_size)
@@ -526,7 +551,7 @@ def prepare_3d_mesh(preprocessed_objects, target_size, base_scaling_factor, base
                         base_index = len(vertices)
                         vertices.extend(create_vertices_list(exterior_coords, base_thickness, height, height_offset))
                         faces = create_add_faces(base_index, exterior_coords, vertices, faces)
-                else:
+                elif isinstance(intersection, shapely.geometry.Polygon):
                     exterior_coords = list(intersection.exterior.coords)
                     #Get Base Index (Before adding new vertices of this object)
                     base_index = len(vertices)
@@ -578,6 +603,8 @@ def cut_two_categories(base_category,cutting_category,detect_islands=False):
                 if detect_islands and not shapely.difference(cutting_object[0],base_object[0]).area == 0:
                     continue
                 base_object[0] = shapely.difference(base_object[0],cutting_object[0])
+            print('.', end='')
+        print('.')
         if(base_object[0].area == 0):
             continue
         #after all cuts we append the object to the list
@@ -608,6 +635,9 @@ def cut_all_categories(object_list_buildings,object_list_paths,object_list_water
     #remove stuff from the green areas
     object_list_greens = cut_two_categories(object_list_greens,object_list_paths)
     object_list_greens = cut_two_categories(object_list_greens,object_list_water)
+
+    #sometimes buildings and paths are overlapping
+    object_list_paths = cut_two_categories(object_list_paths,object_list_buildings)
 
     #embed stuff into base plate
     #object_list_base = cut_two_categories(object_list_base,object_list_buildings)

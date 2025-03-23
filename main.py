@@ -73,11 +73,12 @@ def main():
     if base_plate:
         if base_thickness <= 1:
             raise Exception("Invalid Base Thickness. Needs to be bigger than 1 mm.")
-        object_list_base = [[shapely.Polygon((
+        base = shapely.Polygon((
             (0, 0),
             (target_size * base_scaling_factor, 0),
             (target_size * base_scaling_factor, target_size * base_scaling_factor),
-            (0, target_size * base_scaling_factor))),1,0]]
+            (0, target_size * base_scaling_factor)))
+        object_list_base = ([[base,1,0]])
         base_thickness = base_thickness - 1
     else:
         #for further processing we need some "empty" Polygon as dummy data
@@ -122,37 +123,37 @@ def main():
 
     #Generation of Base Plate
     if base_plate:
-        preprocessed_base = preprocess_objects(object_list_base,bbox,target_size,base_scaling_factor)
+        preprocessed_base = preprocess_objects_meta(object_list_base,bbox,target_size,base_scaling_factor)
         vertices, faces = prepare_3d_mesh(preprocessed_base, target_size, base_scaling_factor, base_thickness, base_generation=True, object_generation=True)
-        save_to_stl(vertices, faces, 'export/standalone_base.stl')
+        save_to_stl(vertices, faces, 'export/base.stl')
         print(f"generation of base plate completed")
 
     #Generation of Buildings
     if buildings and len(object_list_buildings) > 0:
-        preprocessed_buildings = preprocess_objects(object_list_buildings,bbox,target_size,base_scaling_factor)
+        preprocessed_buildings = preprocess_objects_meta(object_list_buildings,bbox,target_size,base_scaling_factor)
         vertices, faces = prepare_3d_mesh(preprocessed_buildings, target_size, base_scaling_factor, base_thickness, base_generation=False, object_generation=True)
-        save_to_stl(vertices, faces, 'export/buildings_without_base.stl')
+        save_to_stl(vertices, faces, 'export/buildings.stl')
         print(f"generation of buildings completed")
 
     #Generation of Paths
     if paths and len(object_list_paths) > 0:
-        preprocessed_paths = preprocess_objects(object_list_paths,bbox,target_size,base_scaling_factor)
+        preprocessed_paths = preprocess_objects_meta(object_list_paths,bbox,target_size,base_scaling_factor)
         vertices, faces = prepare_3d_mesh(preprocessed_paths, target_size, base_scaling_factor, base_thickness, base_generation=False, object_generation=True)
-        save_to_stl(vertices, faces, 'export/paths_without_base.stl')
+        save_to_stl(vertices, faces, 'export/paths.stl')
         print(f"generation of paths completed")
 
     #Generation of Water
     if water and len(object_list_water) > 0:
-        preprocessed_water = preprocess_objects(object_list_water,bbox,target_size,base_scaling_factor)
+        preprocessed_water = preprocess_objects_meta(object_list_water,bbox,target_size,base_scaling_factor)
         vertices, faces = prepare_3d_mesh(preprocessed_water, target_size, base_scaling_factor, base_thickness, base_generation=False, object_generation=True)
-        save_to_stl(vertices, faces, 'export/water_without_base.stl')
+        save_to_stl(vertices, faces, 'export/water.stl')
         print(f"generation of water completed")
 
     #Generation of "Green Areas" like Forest and Meadow
     if green and len(object_list_greens) > 0:
-        preprocessed_greens = preprocess_objects(object_list_greens,bbox,target_size,base_scaling_factor)
+        preprocessed_greens = preprocess_objects_meta(object_list_greens,bbox,target_size,base_scaling_factor)
         vertices, faces = prepare_3d_mesh(preprocessed_greens, target_size, base_scaling_factor, base_thickness, base_generation=False, object_generation=True)
-        save_to_stl(vertices, faces, 'export/greens_without_base.stl')
+        save_to_stl(vertices, faces, 'export/greens.stl')
         print(f"generation of greens completed")
 
 
