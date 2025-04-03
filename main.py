@@ -79,6 +79,7 @@ def main():
             (target_size * base_scaling_factor, target_size * base_scaling_factor),
             (0, target_size * base_scaling_factor)))
         object_list_base = ([[base,1,0]])
+        object_list_base = preprocess_objects_meta(object_list_base,bbox,target_size,base_scaling_factor,scale=False)
         base_thickness = base_thickness - 1
     else:
         #for further processing we need some "empty" Polygon as dummy data
@@ -88,6 +89,7 @@ def main():
     if buildings:
         gdf = fetch_location_data(bbox, "buildings")
         object_list_buildings = generate_object_list(gdf,default_building_height,height_scale)
+        object_list_buildings = preprocess_objects_meta(object_list_buildings,bbox,target_size,base_scaling_factor,scale=True)
     else:
         #for further processing we need some "empty" Polygon as dummy data
         object_list_buildings = ([[shapely.Polygon(),0,0]])
@@ -96,6 +98,7 @@ def main():
     if paths:
         gdf = fetch_location_data(bbox, "paths")
         object_list_paths = generate_object_list(gdf,default_building_height,height_scale)
+        object_list_paths = preprocess_objects_meta(object_list_paths,bbox,target_size,base_scaling_factor,scale=True)
     else:
         #for further processing we need some "empty" Polygon as dummy data
         object_list_paths = ([[shapely.Polygon(),0,0]])
@@ -104,6 +107,7 @@ def main():
     if water:
         gdf = fetch_location_data(bbox, "water")
         object_list_water = generate_object_list(gdf,default_building_height,height_scale)
+        object_list_water = preprocess_objects_meta(object_list_water,bbox,target_size,base_scaling_factor,scale=True)
     else:
         #for further processing we need some "empty" Polygon as dummy data
         object_list_water = ([[shapely.Polygon(),0,0]])
@@ -112,6 +116,7 @@ def main():
     if green:
         gdf = fetch_location_data(bbox, "green")
         object_list_greens = generate_object_list(gdf,default_building_height,height_scale)
+        object_list_greens = preprocess_objects_meta(object_list_greens,bbox,target_size,base_scaling_factor,scale=True)
     else:
         #for further processing we need some "empty" Polygon as dummy data
         object_list_greens = ([[shapely.Polygon(),0,0]])
@@ -121,37 +126,39 @@ def main():
     print(f"starting to cut the layer categories with each other")
     object_list_buildings,object_list_paths,object_list_water,object_list_greens,object_list_base = cut_all_categories(object_list_buildings,object_list_paths,object_list_water,object_list_greens,object_list_base)
 
+
+    #We need Preprocessing again because we did a cut to severeal objects. Therefore there could be interiors and other problems again.
     #Generation of Base Plate
     if base_plate:
-        preprocessed_base = preprocess_objects_meta(object_list_base,bbox,target_size,base_scaling_factor)
+        preprocessed_base = preprocess_objects_meta(object_list_base,bbox,target_size,base_scaling_factor, scale=False)
         vertices, faces = prepare_3d_mesh(preprocessed_base, target_size, base_scaling_factor, base_thickness, base_generation=True, object_generation=True)
         save_to_stl(vertices, faces, 'export/base.stl')
         print(f"generation of base plate completed")
 
     #Generation of Buildings
     if buildings and len(object_list_buildings) > 0:
-        preprocessed_buildings = preprocess_objects_meta(object_list_buildings,bbox,target_size,base_scaling_factor)
+        preprocessed_buildings = preprocess_objects_meta(object_list_buildings,bbox,target_size,base_scaling_factor,scale=False)
         vertices, faces = prepare_3d_mesh(preprocessed_buildings, target_size, base_scaling_factor, base_thickness, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/buildings.stl')
         print(f"generation of buildings completed")
 
     #Generation of Paths
     if paths and len(object_list_paths) > 0:
-        preprocessed_paths = preprocess_objects_meta(object_list_paths,bbox,target_size,base_scaling_factor)
+        preprocessed_paths = preprocess_objects_meta(object_list_paths,bbox,target_size,base_scaling_factor,scale=False)
         vertices, faces = prepare_3d_mesh(preprocessed_paths, target_size, base_scaling_factor, base_thickness, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/paths.stl')
         print(f"generation of paths completed")
 
     #Generation of Water
     if water and len(object_list_water) > 0:
-        preprocessed_water = preprocess_objects_meta(object_list_water,bbox,target_size,base_scaling_factor)
+        preprocessed_water = preprocess_objects_meta(object_list_water,bbox,target_size,base_scaling_factor,scale=False)
         vertices, faces = prepare_3d_mesh(preprocessed_water, target_size, base_scaling_factor, base_thickness, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/water.stl')
         print(f"generation of water completed")
 
     #Generation of "Green Areas" like Forest and Meadow
     if green and len(object_list_greens) > 0:
-        preprocessed_greens = preprocess_objects_meta(object_list_greens,bbox,target_size,base_scaling_factor)
+        preprocessed_greens = preprocess_objects_meta(object_list_greens,bbox,target_size,base_scaling_factor,scale=False)
         vertices, faces = prepare_3d_mesh(preprocessed_greens, target_size, base_scaling_factor, base_thickness, base_generation=False, object_generation=True)
         save_to_stl(vertices, faces, 'export/greens.stl')
         print(f"generation of greens completed")

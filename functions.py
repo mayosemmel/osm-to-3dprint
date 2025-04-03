@@ -88,7 +88,7 @@ def get_object_height(row, default_height=10):
                 return 2
             elif attr == 'landuse' and (row[attr] == 'meadow' or row[attr] == 'cemetery'):
                 return 0.5
-            elif attr == 'leisure' and (row[attr] == 'garden' or row[attr] == 'park'):
+            elif attr == 'leisure' and (row[attr] == 'garden' or row[attr] == 'park' or row[attr] == 'swimming_pool'):
                 return -1
             elif attr == 'leisure' and (row[attr] == 'pitch'):
                 return -1
@@ -192,9 +192,9 @@ def create_planar_face(face_indicies, vertices, id=0):
             triangles_xy.append(triangle)
             triangle = []
 
-    tolerance = 0
+    tolerance = 0.000005
     max_cycles = 10000
-    step_size = 0.0000001
+    step_size = 0.000001
     for triangle in triangles_xy:
         sides = []
         for point in triangle:
@@ -220,7 +220,13 @@ def create_planar_face(face_indicies, vertices, id=0):
                     tolerance += step_size
                 elif len(hits) > 1:
                     tolerance -= step_size
-                if cycles == max_cycles:
+                    while tolerance < 0:
+                        tolerance += 0.1 * step_size
+                if cycles == 0.5 * max_cycles:
+                    step_size = step_size * 10
+                elif cycles == 0.8 * max_cycles:
+                    step_size == step_size * 10
+                elif cycles == max_cycles:
                     raise Exception("Could not find a matching point! Try adjusting tolerance value.")
                 cycles += 1
             sides.append(hits[0])
@@ -272,13 +278,13 @@ def scale_polygon(exterior_coords, bbox, target_size, base_size):
     scale_x = target_size / lng_range
     scale_y = target_size / lat_range
     # Calculate offsets to center the buildings on the enlarged base
-    center_offset_x = (base_size - (scale_x * lng_range)) / 2
-    center_offset_y = (base_size - (scale_y * lat_range)) / 2
+    center_offset_x = (base_size - target_size) / 2
+    center_offset_y = (base_size - target_size) / 2
 
     for i in range(len(exterior_coords)):
         exterior_coords[i] = list(exterior_coords[i])
-        exterior_coords[i][0] = round(((exterior_coords[i][0] - south_lng) * scale_x) + center_offset_x, 3)
-        exterior_coords[i][1] = round(((exterior_coords[i][1] - south_lat) * scale_y) + center_offset_y, 3)
+        exterior_coords[i][0] = round(((exterior_coords[i][0] - south_lng) * scale_x) + center_offset_x, 6)
+        exterior_coords[i][1] = round(((exterior_coords[i][1] - south_lat) * scale_y) + center_offset_y, 6)
     return shapely.Polygon(exterior_coords)
 
 def cut_polygon(geometry):
@@ -410,7 +416,7 @@ def generate_object_list(gdf,default_height,height_scale):
                 object.append(0) #height offset = 0 since it needs to be embedded in base, the embedded millimeter is added to the object height
         else:
             object.append(1) #It is 1 mm deep embedded in base
-            object.append(0) #height offset = 0 since it needs to be embedded in base, the embedded millimeter is added to the object height
+            object.append(0) #height offset = 0 since it needs to be embedded in base
 
         if object[0].area > 0:
             object_list.append(object)
@@ -531,11 +537,24 @@ def prepare_3d_mesh(preprocessed_objects, target_size, base_scaling_factor, base
         # only half array will be used since we only need top OR bottom for the 2D object.
         base_geometry = create_geometry(base_vertices,range(int(len(base_vertices)/2)))
 
-    
+    #in case the geometry is invalid we try to fix it
+    preprocessed_valid_objects = []
+    for object in preprocessed_objects:
+        if not shapely.is_valid(object[0]):
+            valid_geom = shapely.make_valid(object[0])
+            if isinstance(valid_geom, shapely.geometry.MultiPolygon):
+                for geom in valid_geom.geoms:
+                    if isinstance(geom,shapely.geometry.Polygon):
+                        preprocessed_valid_objects.append([geom,object[1],object[2]])
+            elif isinstance(valid_geom,shapely.geometry.Polygon):
+                preprocessed_valid_objects.append([valid_geom,object[1],object[2]])
+        else:
+            preprocessed_valid_objects.append(object)
+
     if object_generation == True:
         id = 0
-        for object in preprocessed_objects:
-            print(f"processing object {id} of {len(preprocessed_objects)}")
+        for object in preprocessed_valid_objects:
+            print(f"processing object {id} of {len(preprocessed_valid_objects)}")
             exterior_coords = list(object[0].exterior.coords)
             height = object[1]
             height_offset = object[2]
@@ -591,10 +610,11 @@ def cut_two_categories(base_category,cutting_category,detect_islands=False):
             cutting_low = cutting_object[2]
             cutting_high = cutting_object[1] + cutting_object[2]
             if not (
-                (base_low >= cutting_low and base_low <= cutting_high) or
-                (base_high >= cutting_low and base_high <= cutting_high) or
-                (cutting_low >= base_low and cutting_low <= base_high) or
-                (cutting_high >= base_low and cutting_high <= base_high)
+                (base_low > cutting_low and base_low < cutting_high) or
+                (base_high > cutting_low and base_high < cutting_high) or
+                (cutting_low > base_low and cutting_low < base_high) or
+                (cutting_high > base_low and cutting_high < base_high) or
+                (cutting_low == base_low and cutting_high == base_high)
             ):
                 continue
             if shapely.intersects(base_object[0],cutting_object[0]):
@@ -603,8 +623,7 @@ def cut_two_categories(base_category,cutting_category,detect_islands=False):
                 if detect_islands and not shapely.difference(cutting_object[0],base_object[0]).area == 0:
                     continue
                 base_object[0] = shapely.difference(base_object[0],cutting_object[0])
-            print('.', end='')
-        print('.')
+        print('.', end='')
         if(base_object[0].area == 0):
             continue
         #after all cuts we append the object to the list
@@ -613,6 +632,7 @@ def cut_two_categories(base_category,cutting_category,detect_islands=False):
                 new_object_list.append(([polygon,base_object[1],base_object[2]]))
         if isinstance(base_object[0], shapely.geometry.Polygon):
             new_object_list.append(base_object)
+    print('.')
     return new_object_list
 
 
@@ -639,10 +659,14 @@ def cut_all_categories(object_list_buildings,object_list_paths,object_list_water
     #sometimes buildings and paths are overlapping
     object_list_paths = cut_two_categories(object_list_paths,object_list_buildings)
 
+    
     #embed stuff into base plate
     #object_list_base = cut_two_categories(object_list_base,object_list_buildings)
     object_list_base = cut_two_categories(object_list_base,object_list_paths)
+    for object in object_list_base:
+        pyplot.plot(*object[0].exterior.xy)
+    pyplot.show()
     object_list_base = cut_two_categories(object_list_base,object_list_water)
     object_list_base = cut_two_categories(object_list_base,object_list_greens)
-
+    
     return(object_list_buildings,object_list_paths,object_list_water,object_list_greens,object_list_base)
