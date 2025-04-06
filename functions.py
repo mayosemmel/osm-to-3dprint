@@ -192,9 +192,9 @@ def create_planar_face(face_indicies, vertices, id=0):
             triangles_xy.append(triangle)
             triangle = []
 
-    tolerance = 0.000005
-    max_cycles = 10000
-    step_size = 0.000001
+    tolerance = 0.0005
+    max_cycles = 1000
+    step_size = 0.0001
     for triangle in triangles_xy:
         sides = []
         for point in triangle:
@@ -206,7 +206,7 @@ def create_planar_face(face_indicies, vertices, id=0):
                 for index in face_indicies:
                     if math.isclose(x, vertices[index][0], rel_tol=tolerance) and math.isclose(y, vertices[index][1], rel_tol=tolerance):
                         hits.append(index)
-                if cycles > 200:
+                if cycles > 895:
                     print(f"We are at cycle {cycles} of trying to find a valid triangle. Tolerance is {tolerance}.")
                     print(f"we are looking for x: {x} - y: {y}")
                     print(f"so far we found:")
@@ -222,11 +222,7 @@ def create_planar_face(face_indicies, vertices, id=0):
                     tolerance -= step_size
                     while tolerance < 0:
                         tolerance += 0.1 * step_size
-                if cycles == 0.5 * max_cycles:
-                    step_size = step_size * 10
-                elif cycles == 0.8 * max_cycles:
-                    step_size == step_size * 10
-                elif cycles == max_cycles:
+                if cycles == max_cycles:
                     raise Exception("Could not find a matching point! Try adjusting tolerance value.")
                 cycles += 1
             sides.append(hits[0])
