@@ -395,7 +395,7 @@ def generate_object_list(gdf,default_height,height_scale):
                 if row.man_made == "pier":
                     object[0] = shapely.buffer(object[0], 0.000004)
             elif hasattr(row,"railway") and not pandas.isna(row.railway):
-                if not row.tunnel == "yes":
+                if not (row.tunnel == "yes" or row.railway == 'razed'):
                     object[0] = shapely.buffer(object[0], 0.00002)
             else:
                 object[0] = shapely.buffer(object[0], 0.000025)
