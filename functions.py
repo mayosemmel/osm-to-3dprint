@@ -12,6 +12,9 @@ from stl import mesh
 from mpl_toolkits import mplot3d
 from matplotlib import pyplot
 
+def truncate_float(float_number, decimal_places):
+    multiplier = 10 ** decimal_places
+    return int(float_number * multiplier) / multiplier
 
 def square_bbox_from_center_point(lat, lon, distance):
     gs = geopandas.GeoSeries(shapely.Point(lon, lat))
@@ -195,16 +198,24 @@ def create_planar_face(face_indicies, vertices, id=0):
     tolerance = 0.0005
     max_cycles = 1000
     step_size = 0.0001
+    decimals = 4
     for triangle in triangles_xy:
         sides = []
         for point in triangle:
             x,y = point
+            x_truncated = truncate_float(x,decimals)
+            y_truncated = truncate_float(y,decimals)
             cycles = 0
             hits = []
+            
             while len(hits) != 1:
                 hits = []
                 for index in face_indicies:
-                    if math.isclose(x, vertices[index][0], rel_tol=tolerance) and math.isclose(y, vertices[index][1], rel_tol=tolerance):
+                    x_to_check = truncate_float(vertices[index][0],decimals)
+                    y_to_check = truncate_float(vertices[index][1],decimals)
+                    if x_truncated == x_to_check and y_truncated == y_to_check:
+                        hits.append(index)
+                    elif math.isclose(x, vertices[index][0], rel_tol=tolerance) and math.isclose(y, vertices[index][1], rel_tol=tolerance):
                         hits.append(index)
                 if cycles > 895:
                     print(f"We are at cycle {cycles} of trying to find a valid triangle. Tolerance is {tolerance}.")
@@ -419,24 +430,19 @@ def generate_object_list(gdf,default_height,height_scale):
     return(object_list)
         
 def preprocess_objects_meta(object_list,bbox,target_size,base_scaling_factor, scale=True):
-    parameters = []
     base_size = target_size*base_scaling_factor
-    id = 0
-    for object in object_list:
-        #Create a List with all parameters for multiprocessing
-        parameters.append([object,bbox,target_size,base_size,id])
-        id += 1
+    
     #Call Preprocessing Function in Multiprocessing
     print("starting preprocessing with", multiprocessing.cpu_count(), "CPU Cores")
     with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
-        meta_object_list = p.map(preprocess_objects,parameters)
+        meta_object_list = p.map(preprocess_objects,object_list)
         p.close()
         p.join()
     ###################################
     #This is only for debugging without multiprocessing
     #meta_object_list = []
-    #for param in parameters:
-    #    meta_object_list.append(preprocess_objects(param))
+    #for object in object_list:
+    #    meta_object_list.append(preprocess_objects(object))
     ######################################
     preprocessed_objects = []
     for meta_object in meta_object_list:
@@ -447,9 +453,8 @@ def preprocess_objects_meta(object_list,bbox,target_size,base_scaling_factor, sc
     print(f"preprocessing done")
     return preprocessed_objects
 
-def preprocess_objects(args):
-    object,bbox,target_size,base_size,id = args
-    print(f"preprocessing id: {id}")
+def preprocess_objects(object):
+    print('.', end='')
     processed_objects = []
     #If Polygon has holes, remove them by splitting it into multiple Polygons
     if len(list(object[0].interiors)):
@@ -659,9 +664,6 @@ def cut_all_categories(object_list_buildings,object_list_paths,object_list_water
     #embed stuff into base plate
     #object_list_base = cut_two_categories(object_list_base,object_list_buildings)
     object_list_base = cut_two_categories(object_list_base,object_list_paths)
-    for object in object_list_base:
-        pyplot.plot(*object[0].exterior.xy)
-    pyplot.show()
     object_list_base = cut_two_categories(object_list_base,object_list_water)
     object_list_base = cut_two_categories(object_list_base,object_list_greens)
     

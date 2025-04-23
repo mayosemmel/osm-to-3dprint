@@ -40,7 +40,8 @@ def main():
     #bbox = square_bbox_from_vertices(49.27478, 10.85891, 49.27973, 10.86771) #Suddersdorf
     #bbox = square_bbox_from_vertices(51.757883, -1.266515, 51.759302, -1.263503) #Oxford University (Polygon with Holes)
     #bbox = square_bbox_from_vertices(49.44759, 11.06375, 49.45976, 11.09048) #Nürnberg Zentrum
-    bbox = square_bbox_from_vertices(49.40804, 11.07375, 49.42298, 11.11181) #Nürnberg Rangierbahnhof
+    #bbox = square_bbox_from_vertices(49.40804, 11.07375, 49.42298, 11.11181) #Nürnberg Rangierbahnhof
+    bbox = square_bbox_from_vertices(49.43102, 11.09297, 49.41910, 11.11254) #Debugging
     #bbox = square_bbox_from_vertices(49.38656, 11.03946, 49.41215, 11.07800) # Nürnberg Hafen
     #bbox = square_bbox_from_vertices(49.56984, 10.58769, 49.58768, 10.63133) # Neustadt Aisch
     
@@ -65,6 +66,10 @@ def main():
     height_scale = model_scaling_factor * height_scaling_factor
 
     #Preparation of 2D Object with height as metadata for later processing
+    #Ojects are organized as follows
+    #object[0] -> shapely Polygon
+    #object[1] -> height in mm
+    #object[2] -> height offset to the base in mm
 
     #Generation of Base Plate
     #We have a Part of the Base Plate which is solid, this will be generated automatically
