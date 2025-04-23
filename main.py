@@ -52,7 +52,7 @@ def main():
     #bbox = square_bbox_from_center_point(48.76336, 11.42484, 2000) #Ingolstadt
     
     #Define what should be generated
-    base_plate = True
+    base_plate = False
     buildings = True
     paths = True
     water = True
@@ -136,36 +136,36 @@ def main():
     #Generation of Base Plate
     if base_plate:
         preprocessed_base = preprocess_objects_meta(object_list_base,bbox,target_size,base_scaling_factor, scale=False)
-        vertices, faces = prepare_3d_mesh(preprocessed_base, target_size, base_scaling_factor, base_thickness, base_generation=True, object_generation=True)
-        save_to_stl(vertices, faces, 'export/base.stl')
+        faces = prepare_3d_mesh(preprocessed_base, target_size, base_scaling_factor, base_thickness, base_generation=True, object_generation=True)
+        save_to_stl(faces, 'export/base.stl')
         print(f"generation of base plate completed")
 
     #Generation of Buildings
     if buildings and len(object_list_buildings) > 0:
         preprocessed_buildings = preprocess_objects_meta(object_list_buildings,bbox,target_size,base_scaling_factor,scale=False)
-        vertices, faces = prepare_3d_mesh(preprocessed_buildings, target_size, base_scaling_factor, base_thickness, base_generation=False, object_generation=True)
-        save_to_stl(vertices, faces, 'export/buildings.stl')
+        faces = prepare_3d_mesh(preprocessed_buildings, target_size, base_scaling_factor, base_thickness, base_generation=False, object_generation=True)
+        save_to_stl(faces, 'export/buildings.stl')
         print(f"generation of buildings completed")
 
     #Generation of Paths
     if paths and len(object_list_paths) > 0:
         preprocessed_paths = preprocess_objects_meta(object_list_paths,bbox,target_size,base_scaling_factor,scale=False)
-        vertices, faces = prepare_3d_mesh(preprocessed_paths, target_size, base_scaling_factor, base_thickness, base_generation=False, object_generation=True)
-        save_to_stl(vertices, faces, 'export/paths.stl')
+        faces = prepare_3d_mesh(preprocessed_paths, target_size, base_scaling_factor, base_thickness, base_generation=False, object_generation=True)
+        save_to_stl(faces, 'export/paths.stl')
         print(f"generation of paths completed")
 
     #Generation of Water
     if water and len(object_list_water) > 0:
         preprocessed_water = preprocess_objects_meta(object_list_water,bbox,target_size,base_scaling_factor,scale=False)
-        vertices, faces = prepare_3d_mesh(preprocessed_water, target_size, base_scaling_factor, base_thickness, base_generation=False, object_generation=True)
-        save_to_stl(vertices, faces, 'export/water.stl')
+        faces = prepare_3d_mesh(preprocessed_water, target_size, base_scaling_factor, base_thickness, base_generation=False, object_generation=True)
+        save_to_stl(faces, 'export/water.stl')
         print(f"generation of water completed")
 
     #Generation of "Green Areas" like Forest and Meadow
     if green and len(object_list_greens) > 0:
         preprocessed_greens = preprocess_objects_meta(object_list_greens,bbox,target_size,base_scaling_factor,scale=False)
-        vertices, faces = prepare_3d_mesh(preprocessed_greens, target_size, base_scaling_factor, base_thickness, base_generation=False, object_generation=True)
-        save_to_stl(vertices, faces, 'export/greens.stl')
+        faces = prepare_3d_mesh(preprocessed_greens, target_size, base_scaling_factor, base_thickness, base_generation=False, object_generation=True)
+        save_to_stl(faces, 'export/greens.stl')
         print(f"generation of greens completed")
 
 

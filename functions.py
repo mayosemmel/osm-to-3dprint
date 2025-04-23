@@ -157,20 +157,19 @@ def create_triangle(vertices,side1,side2,side3):
     triangle_coords = ((vertices[side1][0],vertices[side1][1]),(vertices[side2][0],vertices[side2][1]),(vertices[side3][0],vertices[side3][1]))
     return shapely.Polygon(triangle_coords)
 
-def create_planar_face(face_indicies, vertices, id=0):
+def create_planar_face(vertices,z=0):
     faces = []
-    triangles_xy = []
+    z_height = vertices[0][z][2]
 
-    polygon_input = str(len(face_indicies))
-    polygon_coords = []
+    polygon_input = str(len(vertices))
     multiplicator = 10000
-    for i in range(len(face_indicies)):
-        polygon_input += os.linesep + str(int(vertices[face_indicies[i]][0]*multiplicator)) + " " + str(int(vertices[face_indicies[i]][1]*multiplicator))
+    for vertex in vertices:
+        polygon_input += os.linesep + str(int(vertex[z][0]*multiplicator)) + " " + str(int(vertex[z][1]*multiplicator))
     cwd = os.path.dirname(os.path.realpath(__file__))
-    polygon_input_file = open("cache/polygon_input_" + str(id) + ".txt", "w")
+    polygon_input_file = open("cache/polygon_input_" + str(vertices[0][0][0]) + ".txt", "w")
     polygon_input_file.write(polygon_input)
     polygon_input_file.close()
-    output = subprocess.check_output(["./a.out", "cache/polygon_input_" + str(id) + ".txt"], cwd=cwd, universal_newlines=True )
+    output = subprocess.check_output(["./a.out", "cache/polygon_input_" + str(vertices[0][0][0]) + ".txt"], cwd=cwd, universal_newlines=True )
     output = output.replace("(","").replace(")","").replace(",","").split()
     for i in range(2):
         del output[0]
@@ -178,6 +177,7 @@ def create_planar_face(face_indicies, vertices, id=0):
         del output[len(output)-1]
     coord = []
     triangle = []
+    
     for i in range(len(output)):
         if output[i].startswith("Unable"):
             print("")
@@ -189,59 +189,12 @@ def create_planar_face(face_indicies, vertices, id=0):
         output[i] = float(output[i])/multiplicator
         coord.append(output[i])
         if len(coord) == 2:
+            coord.append(z_height)
             triangle.append(coord)
             coord = []
         if len(triangle) == 3:
-            triangles_xy.append(triangle)
+            faces.append(triangle)
             triangle = []
-
-    tolerance = 0.0005
-    max_cycles = 1000
-    step_size = 0.0001
-    decimals = 4
-    for triangle in triangles_xy:
-        sides = []
-        for point in triangle:
-            x,y = point
-            x_truncated = truncate_float(x,decimals)
-            y_truncated = truncate_float(y,decimals)
-            cycles = 0
-            hits = []
-            
-            while len(hits) != 1:
-                hits = []
-                for index in face_indicies:
-                    x_to_check = truncate_float(vertices[index][0],decimals)
-                    y_to_check = truncate_float(vertices[index][1],decimals)
-                    if x_truncated == x_to_check and y_truncated == y_to_check:
-                        hits.append(index)
-                    elif math.isclose(x, vertices[index][0], rel_tol=tolerance) and math.isclose(y, vertices[index][1], rel_tol=tolerance):
-                        hits.append(index)
-                if cycles > 895:
-                    print(f"We are at cycle {cycles} of trying to find a valid triangle. Tolerance is {tolerance}.")
-                    print(f"we are looking for x: {x} - y: {y}")
-                    print(f"so far we found:")
-                    for hit in hits:
-                        print(f"x: {vertices[hit][0]} - y: {vertices[hit][1]}")
-                if cycles > 0.9*max_cycles and len(hits) > 1:
-                    #This will be fixed as soon as the external triangulation is done and we can use the proper ids for processing
-                    print(f"after {cycles} cycles we still have more than one matching point. We will choose ony by luck.")
-                    hits = ([hits[0]])
-                if len(hits) < 1:
-                    tolerance += step_size
-                elif len(hits) > 1:
-                    tolerance -= step_size
-                    while tolerance < 0:
-                        tolerance += 0.1 * step_size
-                if cycles == max_cycles:
-                    raise Exception("Could not find a matching point! Try adjusting tolerance value.")
-                cycles += 1
-            sides.append(hits[0])
-        if len(sides) < 3:
-            raise Exception("Not enough Sides for the Triangle! Try adjusting tolerance value.")
-        elif len(sides) > 3:
-            raise Exception("More than 3 Sides in the Triangle! Try adjusting tolerance value.")
-        faces.append(sides)
     return faces
 
 def create_geometry(vertices,indicies):
@@ -253,20 +206,25 @@ def create_geometry(vertices,indicies):
     return shapely.Polygon(geometry_coords)
 
 def create_vertices_list(exterior_coords, base_thickness, height, height_offset=1):
+    #Vertices are organized as follows
+    #bottom_coords=[x,y,z]
+    #top_coords=[x,y,z]
+    #coord_pair=[bottom_coords,top_coords]
+    #vertices_list=[coord_pair,coord_pair,...]
     vertices_list = []
     for coord in exterior_coords:
         v_bottom = (coord[0], coord[1], base_thickness + height_offset)
         v_top = (coord[0], coord[1], height + base_thickness + height_offset)
-        vertices_list.extend([v_bottom, v_top])
+        vertices_list.append([v_bottom, v_top])
     return vertices_list
 
-def create_side_faces(base_index, exterior_coords_len):
+def create_side_faces(vertices):
     side_faces = []
-    for i in range(exterior_coords_len - 1):
-        bottom1 = base_index + 2 * i
-        bottom2 = base_index + 2 * (i + 1)
-        top1 = base_index + 2 * i + 1
-        top2 = base_index + 2 * (i + 1) + 1
+    for i in range(len(vertices) - 1):
+        bottom1 = vertices[i][0]
+        bottom2 = vertices[i+1][0]
+        top1 = vertices[i][1]
+        top2 = vertices[i+1][1]
 
         side_faces.append([bottom1, bottom2, top1])
         side_faces.append([top1, bottom2, top2])
@@ -482,17 +440,17 @@ def preprocess_objects(object):
             processed_objects.append([geometry,object[1],object[2]])
     return processed_objects
 
-def create_add_faces(base_index, exterior_coords,vertices,faces, id=0):
-    # Create side faces
-    faces.extend(create_side_faces(base_index, len(exterior_coords)))
+def create_faces(vertices):
+    faces = []
 
-    # Create top and bottom face
-    top_face_indices = [base_index + 2 * i + 1 for i in range(len(exterior_coords) - 1)]
-    faces.extend(create_planar_face(top_face_indices,vertices, id))
+    # Create side faces
+    faces.extend(create_side_faces(vertices))
+
+    # Create top face
+    faces.extend(create_planar_face(vertices,z=0))
 
     # Create bottom face
-    bottom_face_indices = [base_index + 2 * i for i in range(len(exterior_coords) - 1)]
-    faces.extend(create_planar_face(bottom_face_indices,vertices, id))
+    faces.extend(create_planar_face(vertices,z=1))
 
     return faces
 
@@ -528,10 +486,8 @@ def prepare_3d_mesh(preprocessed_objects, target_size, base_scaling_factor, base
             base_frame_objects.append([base_frame_part,1,0])
         for object in base_frame_objects:
             exterior_coords = list(object[0].exterior.coords)
-            #Get Base Index (Before adding new vertices of this object)
-            base_index = len(vertices)
             vertices.extend(create_vertices_list(exterior_coords, base_thickness, object[1], object[2]))
-            faces = create_add_faces(base_index, exterior_coords, vertices, faces)        
+            faces.extend(create_faces(vertices))     
     else:
         # Generate solid base
         base_vertices, base_faces = create_solid_base(target_size, base_thickness, ((base_scaling_factor - 1) / 2) * target_size)
@@ -561,36 +517,31 @@ def prepare_3d_mesh(preprocessed_objects, target_size, base_scaling_factor, base
             height_offset = object[2]
             #Remove any overhangs over the base plate. This is required since some objects start within the bbox but end outside of it.
             #If this is the case we have object which are a lot to big and are not printable.
-            #After Cleanup the Vertices of the final object are added to the whole list
+            #After Cleanup the Faces of the final object are added to the whole list
             if shapely.intersects(base_geometry, object[0]):
                 intersection = shapely.intersection(base_geometry, object[0])
                 if isinstance(intersection, shapely.geometry.MultiPolygon):
                     for polygon in list(intersection.geoms):
                         exterior_coords = list(polygon.exterior.coords)
-                        #Get Base Index (Before adding new vertices of this object)
-                        base_index = len(vertices)
-                        vertices.extend(create_vertices_list(exterior_coords, base_thickness, height, height_offset))
-                        faces = create_add_faces(base_index, exterior_coords, vertices, faces)
+                        vertices= create_vertices_list(exterior_coords, base_thickness, height, height_offset)
+                        faces.extend(create_faces(vertices))
                 elif isinstance(intersection, shapely.geometry.Polygon):
                     exterior_coords = list(intersection.exterior.coords)
-                    #Get Base Index (Before adding new vertices of this object)
-                    base_index = len(vertices)
-                    vertices.extend(create_vertices_list(exterior_coords, base_thickness, height, height_offset))
-                    faces = create_add_faces(base_index, exterior_coords, vertices, faces)
+                    vertices = create_vertices_list(exterior_coords, base_thickness, height, height_offset)
+                    faces.extend(create_faces(vertices))
             else:
                 continue
             id += 1
 
-    vertices = np.array(vertices)
     faces = np.array(faces)
 
-    return vertices, faces
+    return faces
 
-def save_to_stl(vertices, faces, filename):
+def save_to_stl(faces, filename):
     mesh_data = mesh.Mesh(np.zeros(faces.shape[0], dtype=mesh.Mesh.dtype))
     for i, face in enumerate(faces):
         for j in range(3):
-            mesh_data.vectors[i][j] = vertices[face[j], :]
+            mesh_data.vectors[i][j] = face[j]
 
     # Create a new 3D plot
     #figure = pyplot.figure()
