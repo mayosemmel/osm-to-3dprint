@@ -459,56 +459,49 @@ def prepare_3d_mesh(preprocessed_objects, target_size, base_scaling_factor, base
     vertices = []
     faces = []
     base_size = target_size * base_scaling_factor
+    base_geometry = shapely.Polygon((
+            (0, 0),
+            (0, base_size),
+            (base_size, base_size),
+            (base_size, 0)))
+    offset_inner_base = (target_size * (base_scaling_factor - 1)) / 2
+    inner_base_geometry = shapely.Polygon((
+        (offset_inner_base, offset_inner_base),
+        (offset_inner_base, target_size + offset_inner_base),
+        (target_size + offset_inner_base, target_size + offset_inner_base),
+        (target_size + offset_inner_base, offset_inner_base)))
 
     if base_generation == True:
         # Generate solid base
-        base_vertices, base_faces = create_solid_base(base_size, base_thickness)
-        # only half array will be used since we only need top OR bottom for the 2D object.
-        base_geometry = create_geometry(base_vertices,range(int(len(base_vertices)/2)))
-        vertices.extend(base_vertices)
-        faces.extend(base_faces)
+        vertices = create_vertices_list(base_geometry.exterior.coords, 0, base_thickness, height_offset=0)
+        faces.extend(create_faces(vertices))
 
-        offset_inner_base = (target_size * (base_scaling_factor - 1)) / 2
-        inner_base = shapely.Polygon((
-            (offset_inner_base, offset_inner_base),
-            (target_size + offset_inner_base, offset_inner_base),
-            (target_size + offset_inner_base, target_size + offset_inner_base),
-            (offset_inner_base, target_size + offset_inner_base)))
-        full_base = shapely.Polygon((
-            (0, 0),
-            (target_size * base_scaling_factor, 0),
-            (target_size * base_scaling_factor, target_size * base_scaling_factor),
-            (0, target_size * base_scaling_factor)))
-        base_frame = shapely.difference(full_base,inner_base)
+        base_frame = shapely.difference(base_geometry,inner_base_geometry)
         line = shapely.LineString([[0,0], [target_size * base_scaling_factor,target_size * base_scaling_factor]])
         base_frame_objects = []
         for base_frame_part in shapely.ops.split(base_frame, line).geoms:
             base_frame_objects.append([base_frame_part,1,0])
         for object in base_frame_objects:
             exterior_coords = list(object[0].exterior.coords)
-            vertices.extend(create_vertices_list(exterior_coords, base_thickness, object[1], object[2]))
-            faces.extend(create_faces(vertices))     
-    else:
-        # Generate solid base
-        base_vertices, base_faces = create_solid_base(target_size, base_thickness, ((base_scaling_factor - 1) / 2) * target_size)
-        # only half array will be used since we only need top OR bottom for the 2D object.
-        base_geometry = create_geometry(base_vertices,range(int(len(base_vertices)/2)))
-
-    #in case the geometry is invalid we try to fix it
-    preprocessed_valid_objects = []
-    for object in preprocessed_objects:
-        if not shapely.is_valid(object[0]):
-            valid_geom = shapely.make_valid(object[0])
-            if isinstance(valid_geom, shapely.geometry.MultiPolygon):
-                for geom in valid_geom.geoms:
-                    if isinstance(geom,shapely.geometry.Polygon):
-                        preprocessed_valid_objects.append([geom,object[1],object[2]])
-            elif isinstance(valid_geom,shapely.geometry.Polygon):
-                preprocessed_valid_objects.append([valid_geom,object[1],object[2]])
-        else:
-            preprocessed_valid_objects.append(object)
+            vertices = create_vertices_list(exterior_coords, base_thickness, object[1], object[2])
+            faces.extend(create_faces(vertices))
 
     if object_generation == True:
+
+        #in case the geometry is invalid we try to fix it
+        preprocessed_valid_objects = []
+        for object in preprocessed_objects:
+            if not shapely.is_valid(object[0]):
+                valid_geom = shapely.make_valid(object[0])
+                if isinstance(valid_geom, shapely.geometry.MultiPolygon):
+                    for geom in valid_geom.geoms:
+                        if isinstance(geom,shapely.geometry.Polygon):
+                            preprocessed_valid_objects.append([geom,object[1],object[2]])
+                elif isinstance(valid_geom,shapely.geometry.Polygon):
+                    preprocessed_valid_objects.append([valid_geom,object[1],object[2]])
+            else:
+                preprocessed_valid_objects.append(object)
+
         id = 0
         for object in preprocessed_valid_objects:
             print(f"processing object {id} of {len(preprocessed_valid_objects)}")
@@ -518,8 +511,8 @@ def prepare_3d_mesh(preprocessed_objects, target_size, base_scaling_factor, base
             #Remove any overhangs over the base plate. This is required since some objects start within the bbox but end outside of it.
             #If this is the case we have object which are a lot to big and are not printable.
             #After Cleanup the Faces of the final object are added to the whole list
-            if shapely.intersects(base_geometry, object[0]):
-                intersection = shapely.intersection(base_geometry, object[0])
+            if shapely.intersects(inner_base_geometry, object[0]):
+                intersection = shapely.intersection(inner_base_geometry, object[0])
                 if isinstance(intersection, shapely.geometry.MultiPolygon):
                     for polygon in list(intersection.geoms):
                         exterior_coords = list(polygon.exterior.coords)

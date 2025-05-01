@@ -52,7 +52,7 @@ def main():
     #bbox = square_bbox_from_center_point(48.76336, 11.42484, 2000) #Ingolstadt
     
     #Define what should be generated
-    base_plate = False
+    base_plate = True
     buildings = True
     paths = True
     water = True
