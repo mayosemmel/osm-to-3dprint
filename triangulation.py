@@ -1,12 +1,45 @@
 import shapely
 
-def earClippingTriangulate(vertices):
-    #make vertices writable
-    vertices = list(vertices)
+def split_list(a_list):
+    half = len(a_list)//2
+    return a_list[:half], a_list[half:]
+
+def monotoneSubdivision(polygon):
+    #get the bounds of the polygon, we just need the y values
+    min_x,min_y,max_x,max_y = shapely.bounds(polygon)
+    #We will iterate through all points and draw a vertical line at each x-position.
+    #If this line cuts and more than two polygons are the result we will keep the cut.
+    #Otherwise we will not cut at this point and continue with the next point.
+
+    return_polygons = []
+    isMonotone = True
+
+    #we are splitting the list in half and combine them again so the cuts are more middled and therefore likely less cuts will be done.
+    coords1, coords2 = split_list(polygon.exterior.coords)
+    coords2.extend(coords1)
+
+    for coord in coords2:
+        current_x = coord[0]
+        cutting_line = shapely.LineString([[current_x,min_y],[current_x,max_y]])
+        cutted_geoms = shapely.ops.split(polygon, cutting_line).geoms
+        if len(cutted_geoms) > 2:
+            isMonotone = False
+            for geom in cutted_geoms:
+                if isinstance(geom, shapely.geometry.Polygon) and geom.area > 0:
+                    return_polygons.extend(monotoneSubdivision(geom))
+            break
+    if isMonotone:
+        return_polygons.append(polygon)
+    
+    return return_polygons
+
+
+def earClippingTriangulate(geometry):
+    vertices = list(geometry.exterior.coords)
     triangles = []
 
     if len(vertices) < 3:
-        print("Unable to completely triangulate, likely to be a 8 shape or self intersecting polygon")
+        print("Unable to completely triangulate, less than three points given.")
         return triangles
     
     infinite_loop = False
@@ -14,7 +47,7 @@ def earClippingTriangulate(vertices):
 
     while( len(vertices) > 0):
         if infinite_loop == True:
-            raise Exception("Unable to compelete triangulation")
+            raise Exception("Unable to complete triangulation.")
         infinite_loop = True
 
         for current in range(len(vertices)):
