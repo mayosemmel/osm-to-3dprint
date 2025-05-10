@@ -57,6 +57,8 @@ def earClippingTriangulate(geometry, level=0):
     if len(vertices) < 3:
         print("Unable to complete triangulation, less than three points given.")
         return triangles
+    if geometry.area == 0:
+        return triangles
     
     infinite_loop = False
     initial_vertices = copy.deepcopy(vertices)
