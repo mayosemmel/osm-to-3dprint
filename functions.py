@@ -153,10 +153,6 @@ def create_solid_base(base_size, base_thickness=2, offset=0):
 
     return base_vertices, base_faces
 
-def create_triangle(vertices,side1,side2,side3):
-    triangle_coords = ((vertices[side1][0],vertices[side1][1]),(vertices[side2][0],vertices[side2][1]),(vertices[side3][0],vertices[side3][1]))
-    return shapely.Polygon(triangle_coords)
-
 def create_planar_face(vertices,z=0):
     faces = []
     z_height = vertices[0][z][2]
