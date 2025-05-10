@@ -1,4 +1,5 @@
 import shapely
+import copy
 
 def split_list(a_list):
     half = len(a_list)//2
@@ -35,19 +36,28 @@ def monotoneSubdivision(polygon):
 
 
 def earClippingTriangulate(geometry):
+    #check if points of polygon are clockwise ordered
+    if shapely.algorithms.cga.signed_area(geometry.exterior) > 0:
+        geometry = shapely.Polygon(reversed(geometry.exterior.coords))
     vertices = list(geometry.exterior.coords)
+    #shapely closes polygons with a point on the same position as the first point. This additional point needs to be removed.
+    if vertices[0] == vertices[len(vertices)-1]:
+        vertices.pop(len(vertices)-1)
     triangles = []
 
     if len(vertices) < 3:
-        print("Unable to completely triangulate, less than three points given.")
+        print("Unable to complete triangulation, less than three points given.")
         return triangles
     
     infinite_loop = False
-    initial_vertices = vertices
+    initial_vertices = copy.deepcopy(vertices)
 
     while( len(vertices) > 0):
         if infinite_loop == True:
-            raise Exception("Unable to complete triangulation.")
+            triangles = []
+            for geom in monotoneSubdivision(geometry):
+                triangles.extend(earClippingTriangulate(geom))
+            break
         infinite_loop = True
 
         for current in range(len(vertices)):
@@ -58,7 +68,6 @@ def earClippingTriangulate(geometry):
                 break
 
             #index of previous point
-            test = len(vertices)
             if current == 0:
                 previous = len(vertices) - 1
             else:
