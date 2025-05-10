@@ -11,6 +11,7 @@ import geopandas
 from stl import mesh
 from mpl_toolkits import mplot3d
 from matplotlib import pyplot
+from triangulation import *
 
 def truncate_float(float_number, decimal_places):
     multiplier = 10 ** decimal_places
@@ -157,41 +158,12 @@ def create_planar_face(vertices,z=0):
     faces = []
     z_height = vertices[0][z][2]
 
-    polygon_input = str(len(vertices))
-    multiplicator = 10000
+    vertices_converted = []
     for vertex in vertices:
-        polygon_input += os.linesep + str(int(vertex[z][0]*multiplicator)) + " " + str(int(vertex[z][1]*multiplicator))
-    cwd = os.path.dirname(os.path.realpath(__file__))
-    polygon_input_file = open("cache/polygon_input_" + str(vertices[0][0][0]) + ".txt", "w")
-    polygon_input_file.write(polygon_input)
-    polygon_input_file.close()
-    output = subprocess.check_output(["./a.out", "cache/polygon_input_" + str(vertices[0][0][0]) + ".txt"], cwd=cwd, universal_newlines=True )
-    output = output.replace("(","").replace(")","").replace(",","").split()
-    for i in range(2):
-        del output[0]
-    for i in range(14):
-        del output[len(output)-1]
-    coord = []
-    triangle = []
-    
-    for i in range(len(output)):
-        if output[i].startswith("Unable"):
-            print("")
-            print("-------------------------------- WARNING --------------------------------")
-            print("--------------- Unable to triangulate the following input ---------------")
-            print(polygon_input)
-            print("-------------------------------------------------------------------------")
-            return faces
-        output[i] = float(output[i])/multiplicator
-        coord.append(output[i])
-        if len(coord) == 2:
-            coord.append(z_height)
-            triangle.append(coord)
-            coord = []
-        if len(triangle) == 3:
-            faces.append(triangle)
-            triangle = []
-    return faces
+        vertices_converted.append(vertex[z])
+
+    polygon = shapely.Polygon(vertices_converted)
+    return earClippingTriangulate(polygon)
 
 def create_geometry(vertices,indicies):
     geometry_coords = []
@@ -208,9 +180,10 @@ def create_vertices_list(exterior_coords, base_thickness, height, height_offset=
     #coord_pair=[bottom_coords,top_coords]
     #vertices_list=[coord_pair,coord_pair,...]
     vertices_list = []
+    precision = 4
     for coord in exterior_coords:
-        v_bottom = (coord[0], coord[1], base_thickness + height_offset)
-        v_top = (coord[0], coord[1], height + base_thickness + height_offset)
+        v_bottom = (round(coord[0], precision), round(coord[1], precision), round(base_thickness + height_offset, precision))
+        v_top = (round(coord[0], precision), round(coord[1], precision), round(height + base_thickness + height_offset, precision))
         vertices_list.append([v_bottom, v_top])
     return vertices_list
 

@@ -1,17 +1,22 @@
 import shapely
 import copy
+import sys
+from matplotlib import pyplot
 
 def split_list(a_list):
     half = len(a_list)//2
     return a_list[:half], a_list[half:]
 
-def monotoneSubdivision(polygon):
-    #get the bounds of the polygon, we just need the y values
+def monotoneSubdivision(polygon, level=0, direction=0):
+    #get the bounds of the polygon
     min_x,min_y,max_x,max_y = shapely.bounds(polygon)
-    #We will iterate through all points and draw a vertical line at each x-position.
+    #We will iterate through all points and draw a vertical line at each x or y-position.
     #If this line cuts and more than two polygons are the result we will keep the cut.
     #Otherwise we will not cut at this point and continue with the next point.
 
+    if level > 100:
+        print(f"Warning! Recursion level is at {level}!")
+    direction = level % 2
     return_polygons = []
     isMonotone = True
 
@@ -20,14 +25,18 @@ def monotoneSubdivision(polygon):
     coords2.extend(coords1)
 
     for coord in coords2:
-        current_x = coord[0]
-        cutting_line = shapely.LineString([[current_x,min_y],[current_x,max_y]])
+        if direction == 0:
+            current_x = coord[0]
+            cutting_line = shapely.LineString([[current_x,min_y],[current_x,max_y]])
+        else:
+            current_y = coord[1]
+            cutting_line = shapely.LineString([[min_x,current_y],[max_x,current_y]])
         cutted_geoms = shapely.ops.split(polygon, cutting_line).geoms
-        if len(cutted_geoms) > 2:
+        if len(cutted_geoms) > 2 or (level > 10 and len(cutted_geoms) > 1):
             isMonotone = False
             for geom in cutted_geoms:
                 if isinstance(geom, shapely.geometry.Polygon) and geom.area > 0:
-                    return_polygons.extend(monotoneSubdivision(geom))
+                    return_polygons.extend(monotoneSubdivision(geom,level=level+1))
             break
     if isMonotone:
         return_polygons.append(polygon)
@@ -35,7 +44,7 @@ def monotoneSubdivision(polygon):
     return return_polygons
 
 
-def earClippingTriangulate(geometry):
+def earClippingTriangulate(geometry, level=0):
     #check if points of polygon are clockwise ordered
     if shapely.algorithms.cga.signed_area(geometry.exterior) > 0:
         geometry = shapely.Polygon(reversed(geometry.exterior.coords))
@@ -54,9 +63,11 @@ def earClippingTriangulate(geometry):
 
     while( len(vertices) > 0):
         if infinite_loop == True:
+            if level >= sys.getrecursionlimit()*0.9:
+                print(initial_vertices)
             triangles = []
-            for geom in monotoneSubdivision(geometry):
-                triangles.extend(earClippingTriangulate(geom))
+            for geom in monotoneSubdivision(geometry, level=level+1):
+                triangles.extend(earClippingTriangulate(geom, level=level+1))
             break
         infinite_loop = True
 

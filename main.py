@@ -11,14 +11,13 @@ from functions import *
 from stl import mesh
 from mpl_toolkits import mplot3d
 from matplotlib import pyplot
-#C++ Tool from https://github.com/mayosemmel/Geometry-Algorithms/tree/master/Triangulation
 
 
 ### TODO ###
 #
-# maybe implement triangulation by myself?
-# height scaling might look better if done logarythmic?
-# height scaling must be done according to x/y scaling
+# multithreading/multitasking for triangulation
+# refactor organization of vertices
+# triangulation in 3 dimensional objects
 
 
 
@@ -40,8 +39,8 @@ def main():
     #bbox = square_bbox_from_vertices(49.27478, 10.85891, 49.27973, 10.86771) #Suddersdorf
     #bbox = square_bbox_from_vertices(51.757883, -1.266515, 51.759302, -1.263503) #Oxford University (Polygon with Holes)
     #bbox = square_bbox_from_vertices(49.44759, 11.06375, 49.45976, 11.09048) #Nürnberg Zentrum
-    #bbox = square_bbox_from_vertices(49.40804, 11.07375, 49.42298, 11.11181) #Nürnberg Rangierbahnhof
-    bbox = square_bbox_from_vertices(49.43102, 11.09297, 49.41910, 11.11254) #Debugging
+    bbox = square_bbox_from_vertices(49.40804, 11.07375, 49.42298, 11.11181) #Nürnberg Rangierbahnhof
+    #bbox = square_bbox_from_vertices(49.43102, 11.09297, 49.41910, 11.11254) #Debugging
     #bbox = square_bbox_from_vertices(49.38656, 11.03946, 49.41215, 11.07800) # Nürnberg Hafen
     #bbox = square_bbox_from_vertices(49.56984, 10.58769, 49.58768, 10.63133) # Neustadt Aisch
     
