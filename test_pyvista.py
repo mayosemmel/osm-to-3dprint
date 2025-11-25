@@ -1,15 +1,38 @@
 """This module is for testing out the possibilities of pyvista."""
 
 import pyvista as pv
-import numpy as np
+import shapely
+from functions import *
 
-vertices = [(0, 0, 1), (10, 0, 1), (10, 10, 1), (0, 10, 1), (0, 8, 1), (8, 8, 1), (8, 2, 1), (0, 2, 1), (0, 0, 1)]
-#points = np.array([[0, 0, 0], [1, 0, 0], [1, 0.5, 0], [0, 0.5, 0]])
-# faces = np.hstack([[3, 0, 2, 3]])
-faces = np.hstack([[9, 0, 1, 2, 3, 4, 5, 6, 7, 8]])
-#faces = [(4, 0, 1, 2, 3), (3, 2, 4, 5)]
-mesh = pv.PolyData(vertices, faces)
-mesh.plot(show_edges=True, line_width=5)
+#U-Shape
+#vertices_out = [(0, 0, 5), (10, 0, 0), (10, 10, 0), (0, 10, 5), (0, 6, 5), (6, 6, 2), (6, 4, 2), (0, 4, 5), (0, 0, 5)]
+#vertices_in = [[(9, 9, 0.5), (8, 9, 1), (8, 8, 1), (9, 8, 0.5)]]
+vertices_out = [(0, 0, 0), (10, 0, 0), (10, 10, 0), (0, 10, 0), (0, 6, 0), (6, 6, 0), (6, 4, 0), (0, 4, 0), (0, 0, 0)]
+geometry = shapely.Polygon(vertices_out)
+
+mesh = pv.PolyData()
+for polygon in cut_polygon(geometry):
+
+    coords = list(polygon.exterior.coords)
+    length = len(coords)
+    faces = [length]
+    faces.extend(range(length))
+
+    mesh = mesh.merge(pv.PolyData(coords, faces))
+
+
+vertices_out = [(0, 0, 5), (10, 0, 5), (10, 10, 5), (0, 10, 5), (0, 6, 5), (6, 6, 5), (6, 4, 5), (0, 4, 5), (0, 0, 5)]
+geometry = shapely.Polygon(vertices_out)
+
+for polygon in cut_polygon(geometry):
+
+    coords = list(polygon.exterior.coords)
+    length = len(coords)
+    faces = [length]
+    faces.extend(range(length))
+
+    mesh = mesh.merge(pv.PolyData(coords, faces))
+
 
 mesh = mesh.triangulate()
 
@@ -20,6 +43,6 @@ actor = plotter.show_bounds(
     location='outer',
     all_edges=True
 )
-#plotter.show()
+plotter.show()
 
-mesh.plot(show_edges=True, line_width=5)
+#mesh.plot(show_edges=True, line_width=5)
