@@ -1,19 +1,17 @@
+"""This module provides processing functions for osm-to-3dprint."""
+
+
+import numpy as np
 import osmnx as ox
 import shapely
-import numpy as np
-import subprocess
-import concurrent.futures
-import multiprocessing
-import os
-import math
 import pandas
 import geopandas
-from stl import mesh
-from mpl_toolkits import mplot3d
-from matplotlib import pyplot
+import multiprocessing
 from triangulation import *
+from stl import mesh
 
 def truncate_float(float_number, decimal_places):
+    """Function truncating float number to given decimal places."""
     multiplier = 10 ** decimal_places
     return int(float_number * multiplier) / multiplier
 
@@ -573,7 +571,7 @@ def cut_all_categories(object_list_buildings,object_list_paths,object_list_water
     #sometimes buildings and paths are overlapping
     object_list_paths = cut_two_categories(object_list_paths,object_list_buildings)
 
-    
+ 
     #embed stuff into base plate
     #object_list_base = cut_two_categories(object_list_base,object_list_buildings)
     object_list_base = cut_two_categories(object_list_base,object_list_paths)
