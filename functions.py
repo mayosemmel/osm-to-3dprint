@@ -72,6 +72,35 @@ def fetch_location_data(bbox, location_type):
         gdf = ([[shapely.Polygon(),0]])
     return gdf
 
+def get_special_area_height(area_type, sub_area_type):
+    """This functions defines the height of special areas."""
+    height = 0
+
+    if area_type == 'highway':
+        #Stuff that needs to be the same level as the base plate
+        height =  -1
+    elif area_type == 'railway':
+        height =  0.5
+
+    if sub_area_type in ('water', 'reef', 'grassland', 'scrub', 'wood', 'garden', 'park', 'swimming_pool', 'pitch', 'basin', 'salt_pond', 'grass',
+                         'allotments', 'flowerbed', 'village_green'):
+        #Stuff that needs to be the same level as the base plate
+        height = -1
+    elif sub_area_type in ('meadow', 'cemetery'):
+        height =  0.5
+    elif sub_area_type == 'scrub':
+        #scrubs are between 1 and 2 meters high
+        height = 1
+    elif sub_area_type in ('pier', 'plant_nursery', 'vineyard', 'recreation_ground'):
+        height =  2
+    elif sub_area_type == 'orchard':
+        height =  4
+    elif sub_area_type in ('wood', 'forest'):
+        #woods probably about 15 meters high
+        height = 15
+
+    return height
+
 def get_object_height(row, default_height=10):
     """
     Query or Define object heights
@@ -80,40 +109,14 @@ def get_object_height(row, default_height=10):
     Paths are also even with base plate
     #TODO: What about bridges?!
     """
-    special_area_attributes = ['natural', 'landuse', 'leisure', 'highway', 'man_made', 'railway']
-    for attr in special_area_attributes:
-        if attr in row:
-            if attr == 'natural' and (row[attr] == 'water' or row[attr] == 'reef' or row[attr] == 'grassland' or row[attr] == 'scrub' or row[attr] == 'wood'):
-                #Stuff that needs to be the same level as the base plate
-                return -1
-            elif attr == 'landuse' and (row[attr] == 'basin' or row[attr] == 'salt_pond' or row[attr] == 'grass' or row[attr] == 'allotments' or row[attr] == 'flowerbed' or row[attr] == 'village_green'):
-                return -1
-            elif attr == 'natural' and (row[attr] == 'scrub'):
-                #scrubs are between 1 and 2 meters high
-                return 1
-            elif attr == 'natural' and (row[attr] == 'wood'):
-                #woods probably about 25 meters high
-                return 15
-            elif attr == 'landuse' and (row[attr] == 'forest'):
-                return 15
-            elif attr == 'landuse' and (row[attr] == 'orchard'):
-                return 4
-            elif attr == 'landuse' and (row[attr] == 'plant_nursery' or row[attr] == 'vineyard' or row[attr] == 'recreation_ground'):
-                return 2
-            elif attr == 'landuse' and (row[attr] == 'meadow' or row[attr] == 'cemetery'):
-                return 0.5
-            elif attr == 'leisure' and (row[attr] == 'garden' or row[attr] == 'park' or row[attr] == 'swimming_pool'):
-                return -1
-            elif attr == 'leisure' and (row[attr] == 'pitch'):
-                return -1
-            elif attr == 'highway' and not pandas.isna(row[attr]):
-                #Stuff that needs to be the same level as the base plate
-                return -1
-            elif attr == 'man_made' and (row[attr] == 'pier'):
-                #piers are maybe around 2 meter high?
-                return 2
-            elif attr == 'railway' and not pandas.isna(row[attr]):
-                return 0.5
+
+    special_area_attributes = {'natural', 'landuse', 'leisure', 'highway', 'man_made', 'railway'}
+    attribute = special_area_attributes.intersection(row.index)
+    if attribute:
+        attribute = attribute.pop()
+        height = get_special_area_height(attribute, row[attribute])
+        if height != 0:
+            return height
 
     default_citywall_height = default_height*1.7
     # Check for various height attributes
@@ -125,16 +128,16 @@ def get_object_height(row, default_height=10):
                 if attr == 'building:levels':
                     height = height * 3  # Assuming 3 meters per level
                     return height
-                return height
-            elif isinstance(height, str):
+            if isinstance(height, str):
                 try:
                     height_value = float(height.replace('m', '').strip())
                     if attr == 'building:levels':
                         height = height_value * 3  # Assuming 3 meters per level
-                        return height
-                    if attr == 'historic:citywalls':
-                        return default_citywall_height
-                    return height_value
+                    elif attr == 'historic:citywalls':
+                        height = default_citywall_height
+                    else:
+                        height = height_value
+                    return height
                 except ValueError:
                     continue
     return default_height
