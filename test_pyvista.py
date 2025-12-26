@@ -238,7 +238,7 @@ def test_pyvista(vertices):
         if i >= 2:
             side_faces.extend([3, i - 2, i - 1, i])
 
-    lower_face[0] = len(lower_face) -1 
+    lower_face[0] = len(lower_face) -1
     upper_face[0] = len(upper_face) -1
     mesh = pv.PolyData(vertices_top_bottom, [lower_face, upper_face])
     mesh = mesh.merge(pv.PolyData(vertices_top_bottom, side_faces))
