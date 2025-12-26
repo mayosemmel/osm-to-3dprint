@@ -1,14 +1,13 @@
 """This module provides processing functions for osm-to-3dprint."""
 
-
+import multiprocessing
 import numpy as np
 import osmnx as ox
 import shapely
 import pandas
 import geopandas
-import multiprocessing
-from triangulation import *
 from stl import mesh
+from triangulation import earClippingTriangulate
 
 def truncate_float(float_number, decimal_places):
     """Function truncating float number to given decimal places."""
@@ -16,6 +15,7 @@ def truncate_float(float_number, decimal_places):
     return int(float_number * multiplier) / multiplier
 
 def square_bbox_from_center_point(lat, lon, distance):
+    """Genereate a square on a map with a given center coordiante."""
     gs = geopandas.GeoSeries(shapely.Point(lon, lat))
     gdf = geopandas.GeoDataFrame(geometry=gs,crs='EPSG:4326')
     gdf = gdf.to_crs('EPSG:3857')
@@ -27,10 +27,11 @@ def square_bbox_from_center_point(lat, lon, distance):
     return returnpoly.bounds
 
 def square_bbox_from_vertices(min_lat, min_lon, max_lat, max_lon):
+    """Make sure the vertices are resulting in a square. If not the quare will be slightly adjusted."""
     gs = geopandas.GeoSeries(shapely.Polygon(((min_lon, min_lat),(max_lon, min_lat), (max_lon, max_lat), (min_lon, max_lat))))
     gdf = geopandas.GeoDataFrame(geometry=gs,crs='EPSG:4326')
     bounds = gdf.to_crs('EPSG:3857').bounds
-    
+
     side_length_x = bounds.maxx[0] - bounds.minx[0]
     side_length_y = bounds.maxy[0] - bounds.miny[0]
     side_length_avg = (side_length_x + side_length_y) / 2
@@ -48,29 +49,40 @@ def square_bbox_from_vertices(min_lat, min_lon, max_lat, max_lon):
     return returnpoly.bounds
 
 def fetch_location_data(bbox, location_type):
-    # Fetch building footprints within the bounding box
+    """Fetch building footprints within the bounding box."""
     try:
         if location_type == "buildings":
-            gdf = ox.features_from_bbox( bbox , tags = {'building': True, 'historic': ['citywalls']})
-        if location_type == "paths":
-            gdf = ox.features_from_bbox( bbox , tags = {'highway': True, 'man_made': ['pier'], 'railway': True})
-        if location_type == "water":
-            gdf = ox.features_from_bbox( bbox , tags = {'natural': ['water','reef'],'landuse': ['basin','salt_pond'], 'leisure': ['swimming_pool']})
-        if location_type == "green":
-            gdf = ox.features_from_bbox( bbox , tags = {'landuse': ['forest','meadow','grass','allotments','flowerbed','orchard','plant_nursery','vineyard','cemetery','recreation_ground','village_green'],'leisure': ['garden','park','pitch'],'natural': ['grassland','scrub','wood']})
-    except: # Return Empty Polygon if location type is not found
+            gdf = ox.features_from_bbox( bbox, tags = {
+                'building': True, 'historic': ['citywalls']})
+        elif location_type == "paths":
+            gdf = ox.features_from_bbox( bbox, tags = {
+                'highway': True, 'man_made': ['pier'], 'railway': True})
+        elif location_type == "water":
+            gdf = ox.features_from_bbox( bbox, tags = {
+                'natural': ['water','reef'],'landuse': ['basin','salt_pond'], 'leisure': ['swimming_pool']})
+        elif location_type == "green":
+            gdf = ox.features_from_bbox( bbox,tags ={
+                'landuse': ['forest','meadow','grass','allotments','flowerbed','orchard','plant_nursery','vineyard','cemetery','recreation_ground',
+                'village_green'],'leisure': ['garden','park','pitch'],'natural': ['grassland','scrub','wood']})
+        else:
+            #invalid location type -> returning empty polygon
+            gdf = ([[shapely.Polygon(),0]])
+    except ox._errors.InsufficientResponseError: # pylint: disable=protected-access
+        # Return Empty Polygon if location type is not found
         gdf = ([[shapely.Polygon(),0]])
     return gdf
 
 def get_object_height(row, default_height=10):
-    #Areas like water and grass need to be on same level as base plate
-    #Areas like forest or scrub need to be elevated slightly
-    #Paths are also even with base plate
+    """
+    Query or Define object heights
+    Areas like water and grass need to be on same level as base plate
+    Areas like forest or scrub need to be elevated slightly
+    Paths are also even with base plate
     #TODO: What about bridges?!
+    """
     special_area_attributes = ['natural', 'landuse', 'leisure', 'highway', 'man_made', 'railway']
     for attr in special_area_attributes:
         if attr in row:
-            test = row[attr]
             if attr == 'natural' and (row[attr] == 'water' or row[attr] == 'reef' or row[attr] == 'grassland' or row[attr] == 'scrub' or row[attr] == 'wood'):
                 #Stuff that needs to be the same level as the base plate
                 return -1
@@ -128,6 +140,7 @@ def get_object_height(row, default_height=10):
     return default_height
 
 def create_solid_base(base_size, base_thickness=2, offset=0):
+    """Generate the Base-Square with given size and thickness"""
     # Define vertices for the base (solid block)
     base_vertices = [
         (offset + 0, offset + 0, 0),  # Bottom face
@@ -153,9 +166,7 @@ def create_solid_base(base_size, base_thickness=2, offset=0):
     return base_vertices, base_faces
 
 def create_planar_face(vertices,z=0):
-    faces = []
-    z_height = vertices[0][z][2]
-
+    """Convert vertices to shapely polygon and export as triangles."""
     vertices_converted = []
     for vertex in vertices:
         vertices_converted.append(vertex[z])
@@ -164,6 +175,7 @@ def create_planar_face(vertices,z=0):
     return earClippingTriangulate(polygon)
 
 def create_geometry(vertices,indicies):
+    """Convert custom vertices/indicies format to a shapely polygon."""
     geometry_coords = []
     for index in indicies:
         x = vertices[index][0]
@@ -172,6 +184,7 @@ def create_geometry(vertices,indicies):
     return shapely.Polygon(geometry_coords)
 
 def create_vertices_list(exterior_coords, base_thickness, height, height_offset=1):
+    """Define upper and lower layer and convert to Vertices List"""
     #Vertices are organized as follows
     #bottom_coords=[x,y,z]
     #top_coords=[x,y,z]
@@ -186,6 +199,7 @@ def create_vertices_list(exterior_coords, base_thickness, height, height_offset=
     return vertices_list
 
 def create_side_faces(vertices):
+    """Generate side faces as zig-zag triangles"""
     side_faces = []
     for i in range(len(vertices) - 1):
         bottom1 = vertices[i][0]
@@ -198,6 +212,7 @@ def create_side_faces(vertices):
     return side_faces
 
 def scale_polygon(exterior_coords, bbox, target_size, base_size):
+    """Scale Polygon to model size."""
     #make the coords writable
     exterior_coords = list(exterior_coords)
     # Unpack the bounding box
@@ -213,7 +228,7 @@ def scale_polygon(exterior_coords, bbox, target_size, base_size):
     center_offset_x = (base_size - target_size) / 2
     center_offset_y = (base_size - target_size) / 2
 
-    for i in range(len(exterior_coords)):
+    for i, coord in enumerate(exterior_coords):
         exterior_coords[i] = list(exterior_coords[i])
         exterior_coords[i][0] = round(((exterior_coords[i][0] - south_lng) * scale_x) + center_offset_x, 6)
         exterior_coords[i][1] = round(((exterior_coords[i][1] - south_lat) * scale_y) + center_offset_y, 6)
