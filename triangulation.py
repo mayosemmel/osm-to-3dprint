@@ -1,13 +1,16 @@
-import shapely
+"""This module provides multiple options for triangulation of complex polygons."""
+
 import copy
 import sys
-from matplotlib import pyplot
+import shapely
 
 def split_list(a_list):
+    """split a list in half and return both halfs"""
     half = len(a_list)//2
     return a_list[:half], a_list[half:]
 
-def monotoneSubdivision(polygon, level=0, direction=0):
+def monotone_subdivision(polygon, level=0, direction=0):
+    """Make polygon monotone. This is important for triangulation."""
     #get the bounds of the polygon
     min_x,min_y,max_x,max_y = shapely.bounds(polygon)
     #We will iterate through all points and draw a vertical line at each x or y-position.
@@ -18,7 +21,7 @@ def monotoneSubdivision(polygon, level=0, direction=0):
         print(f"Warning! Recursion level is at {level}!")
     direction = level % 2
     return_polygons = []
-    isMonotone = True
+    is_monotone = True
 
     #we are splitting the list in half and combine them again so the cuts are more middled and therefore likely less cuts will be done.
     coords1, coords2 = split_list(polygon.exterior.coords)
@@ -33,18 +36,19 @@ def monotoneSubdivision(polygon, level=0, direction=0):
             cutting_line = shapely.LineString([[min_x,current_y],[max_x,current_y]])
         cutted_geoms = shapely.ops.split(polygon, cutting_line).geoms
         if len(cutted_geoms) > 2 or (level > 10 and len(cutted_geoms) > 1):
-            isMonotone = False
+            is_monotone = False
             for geom in cutted_geoms:
                 if isinstance(geom, shapely.geometry.Polygon) and geom.area > 0:
-                    return_polygons.extend(monotoneSubdivision(geom,level=level+1))
+                    return_polygons.extend(monotone_subdivision(geom,level=level+1))
             break
-    if isMonotone:
+    if is_monotone:
         return_polygons.append(polygon)
-    
+
     return return_polygons
 
 
-def earClippingTriangulate(geometry, level=0):
+def ear_clipping_triangulate(geometry, level=0):
+    """triangulate polygon with ear clipping algorythm"""
     #check if points of polygon are clockwise ordered
     if shapely.algorithms.cga.signed_area(geometry.exterior) > 0:
         geometry = shapely.Polygon(reversed(geometry.exterior.coords))
@@ -59,21 +63,21 @@ def earClippingTriangulate(geometry, level=0):
         return triangles
     if geometry.area == 0:
         return triangles
-    
+
     infinite_loop = False
     initial_vertices = copy.deepcopy(vertices)
 
-    while( len(vertices) > 0):
-        if infinite_loop == True:
+    while len(vertices) > 0:
+        if infinite_loop:
             if level >= sys.getrecursionlimit()*0.9:
                 print(initial_vertices)
             triangles = []
-            for geom in monotoneSubdivision(geometry, level=level+1):
-                triangles.extend(earClippingTriangulate(geom, level=level+1))
+            for geom in monotone_subdivision(geometry, level=level+1):
+                triangles.extend(ear_clipping_triangulate(geom, level=level+1))
             break
         infinite_loop = True
 
-        for current in range(len(vertices)):
+        for current, _ in enumerate(vertices):
             if len(vertices) < 3:
                 if len(vertices) > 0:
                     vertices.pop(current)
@@ -102,7 +106,7 @@ def earClippingTriangulate(geometry, level=0):
                     if triangle.contains(vertex):
                         point_in_triangle = True
                         break
-                
+
                 if not point_in_triangle:
                     #Check if two points are the same point
                     #If we have three points which are clockwise ordered or coliniar we add the triangle to the triangle list
@@ -113,5 +117,3 @@ def earClippingTriangulate(geometry, level=0):
                     infinite_loop = False
                     break
     return triangles
-
-
