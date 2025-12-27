@@ -353,8 +353,10 @@ def generate_object_list(gdf,default_height,height_scale):
     return object_list
 
 def preprocess_objects_meta(object_list,bbox,target_size,base_scaling_factor, scale=True):
+    """Meta function for preprocessing. Primarily needed for multithreading."""
+
     base_size = target_size*base_scaling_factor
-    
+
     #Call Preprocessing Function in Multiprocessing
     print("starting preprocessing with", multiprocessing.cpu_count(), "CPU Cores")
     with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
@@ -369,22 +371,23 @@ def preprocess_objects_meta(object_list,bbox,target_size,base_scaling_factor, sc
     ######################################
     preprocessed_objects = []
     for meta_object in meta_object_list:
-        for object in meta_object:
+        for geo_object in meta_object:
             if scale:
-                object[0] = scale_polygon(object[0].exterior.coords,bbox,target_size,base_size)
-            preprocessed_objects.append(object)
-    print(f"preprocessing done")
+                geo_object[0] = scale_polygon(geo_object[0].exterior.coords,bbox,target_size,base_size)
+            preprocessed_objects.append(geo_object)
+    print("preprocessing done")
     return preprocessed_objects
 
-def preprocess_objects(object):
+def preprocess_objects(geo_object):
+    """Preprocess geometries to have the correct type, no holes, vertices in clockwise order, scaling, ...)"""
     print('.', end='')
     processed_objects = []
     #If Polygon has holes, remove them by splitting it into multiple Polygons
-    if len(list(object[0].interiors)):
-        geometry_list = cut_polygon(object[0])
+    if len(list(geo_object[0].interiors)) > 0:
+        geometry_list = cut_polygon(geo_object[0])
     else:
         #nothing to cut
-        geometry_list=([object[0]])
+        geometry_list = [geo_object[0]]
 
     for geometry in geometry_list:
         #check if points of polygon are clockwise ordered
@@ -397,12 +400,12 @@ def preprocess_objects(object):
             if isinstance(valid_geom, shapely.geometry.MultiPolygon):
                 for geom in valid_geom.geoms:
                     if isinstance(geom,shapely.geometry.Polygon):
-                        processed_objects.append([geom,object[1],object[2]])
+                        processed_objects.append([geom,geo_object[1],geo_object[2]])
             else:
                 if isinstance(valid_geom,shapely.geometry.Polygon):
-                    processed_objects.append([valid_geom,object[1],object[2]])
+                    processed_objects.append([valid_geom,geo_object[1],geo_object[2]])
         else:
-            processed_objects.append([geometry,object[1],object[2]])
+            processed_objects.append([geometry,geo_object[1],geo_object[2]])
     return processed_objects
 
 def create_faces(vertices):
@@ -447,38 +450,37 @@ def prepare_3d_mesh(preprocessed_objects, target_size, base_scaling_factor, base
         base_frame_objects = []
         for base_frame_part in shapely.ops.split(base_frame, line).geoms:
             base_frame_objects.append([base_frame_part,1,0])
-        for object in base_frame_objects:
-            exterior_coords = list(object[0].exterior.coords)
-            vertices = create_vertices_list(exterior_coords, base_thickness, object[1], object[2])
+        for geo_object in base_frame_objects:
+            exterior_coords = list(geo_object[0].exterior.coords)
+            vertices = create_vertices_list(exterior_coords, base_thickness, geo_object[1], geo_object[2])
             faces.extend(create_faces(vertices))
 
     if object_generation:
-
         #in case the geometry is invalid we try to fix it
         preprocessed_valid_objects = []
-        for object in preprocessed_objects:
-            if not shapely.is_valid(object[0]):
-                valid_geom = shapely.make_valid(object[0])
+        for geo_object in preprocessed_objects:
+            if not shapely.is_valid(geo_object[0]):
+                valid_geom = shapely.make_valid(geo_object[0])
                 if isinstance(valid_geom, shapely.geometry.MultiPolygon):
                     for geom in valid_geom.geoms:
                         if isinstance(geom,shapely.geometry.Polygon):
-                            preprocessed_valid_objects.append([geom,object[1],object[2]])
+                            preprocessed_valid_objects.append([geom,geo_object[1],geo_object[2]])
                 elif isinstance(valid_geom,shapely.geometry.Polygon):
-                    preprocessed_valid_objects.append([valid_geom,object[1],object[2]])
+                    preprocessed_valid_objects.append([valid_geom,geo_object[1],geo_object[2]])
             else:
-                preprocessed_valid_objects.append(object)
+                preprocessed_valid_objects.append(geo_object)
 
-        id = 0
-        for object in preprocessed_valid_objects:
-            print(f"processing object {id} of {len(preprocessed_valid_objects)}")
-            exterior_coords = list(object[0].exterior.coords)
-            height = object[1]
-            height_offset = object[2]
+        counter = 0
+        for geo_object in preprocessed_valid_objects:
+            print(f"processing object {counter} of {len(preprocessed_valid_objects)}")
+            exterior_coords = list(geo_object[0].exterior.coords)
+            height = geo_object[1]
+            height_offset = geo_object[2]
             #Remove any overhangs over the base plate. This is required since some objects start within the bbox but end outside of it.
             #If this is the case we have object which are a lot to big and are not printable.
             #After Cleanup the Faces of the final object are added to the whole list
-            if shapely.intersects(inner_base_geometry, object[0]):
-                intersection = shapely.intersection(inner_base_geometry, object[0])
+            if shapely.intersects(inner_base_geometry, geo_object[0]):
+                intersection = shapely.intersection(inner_base_geometry, geo_object[0])
                 if isinstance(intersection, shapely.geometry.MultiPolygon):
                     for polygon in list(intersection.geoms):
                         exterior_coords = list(polygon.exterior.coords)
@@ -490,7 +492,7 @@ def prepare_3d_mesh(preprocessed_objects, target_size, base_scaling_factor, base
                     faces.extend(create_faces(vertices))
             else:
                 continue
-            id += 1
+            counter += 1
 
     faces = np.array(faces)
 

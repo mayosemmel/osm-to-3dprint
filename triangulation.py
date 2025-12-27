@@ -77,25 +77,25 @@ def ear_clipping_triangulate(geometry, level=0):
             break
         infinite_loop = True
 
-        for current, _ in enumerate(vertices):
+        for current_point, _ in enumerate(vertices):
             if len(vertices) < 3:
                 if len(vertices) > 0:
-                    vertices.pop(current)
+                    vertices.pop(current_point)
                 infinite_loop = False
                 break
 
             #index of previous point
-            if current == 0:
-                previous = len(vertices) - 1
+            if current_point == 0:
+                previous_point = len(vertices) - 1
             else:
-                previous = current - 1
+                previous_point = current_point - 1
             #index of next point
-            if current == len(vertices) - 1:
-                next = 0
+            if current_point == len(vertices) - 1:
+                next_point = 0
             else:
-                next = current + 1
+                next_point = current_point + 1
             #create a triangle out of the previous, current and next point
-            triangle = shapely.Polygon((vertices[previous],vertices[current], vertices[next]))
+            triangle = shapely.Polygon((vertices[previous_point],vertices[current_point], vertices[next_point]))
             #check if triangle is a line (points coliniar) or a line -> area=0
             #check if triangle points are clockwise ordered
             if triangle.area == 0 or shapely.algorithms.cga.signed_area(triangle.exterior) < 0:
@@ -110,10 +110,12 @@ def ear_clipping_triangulate(geometry, level=0):
                 if not point_in_triangle:
                     #Check if two points are the same point
                     #If we have three points which are clockwise ordered or coliniar we add the triangle to the triangle list
-                    if not (vertices[previous] == vertices[current] or vertices[next] == vertices[current] or vertices[next] == vertices[previous]):
-                        triangles.append((vertices[previous],vertices[current],vertices[next]))
+                    if not (vertices[previous_point] == vertices[current_point] or
+                            vertices[next_point] == vertices[current_point] or
+                            vertices[next_point] == vertices[previous_point]):
+                        triangles.append((vertices[previous_point],vertices[current_point],vertices[next_point]))
                     #remove vertice from array
-                    vertices.pop(current)
+                    vertices.pop(current_point)
                     infinite_loop = False
                     break
     return triangles
