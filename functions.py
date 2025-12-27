@@ -271,13 +271,38 @@ def cut_polygon(geometry):
             for cutted_geom in shapely.ops.split(geom, line).geoms:
                 if cutted_geom.area == 0:
                     continue
-                if len(list(cutted_geom.interiors)):
+                if len(list(cutted_geom.interiors)) > 0:
                     geoms_with_interiors.append(cutted_geom)
                 else:
                     geoms_without_interiors.append(cutted_geom)
         cycles += 1
     return geoms_without_interiors
 
+def get_path_width(path_subtype):
+    """This functions defines the width of path. Values are manually set."""
+    if path_subtype == "pier":
+        width = 0.000004
+    elif path_subtype in ("living_street", "service", "pedestrian", "track", "footway", "bridleway", "path", "sidewalk", "crossing", "traffic_island",
+                          "cycleway", "residential"):
+        width = 0.000025
+    elif path_subtype in ("tertiary_link", "secondary_link"):
+        width = 0.00004
+    elif path_subtype == "tertiary":
+        width = 0.000045
+    elif path_subtype in ("primary_link", "trunk_link"):
+        width = 0.00005
+    elif path_subtype == "secondary":
+        width = 0.000055
+    elif path_subtype in ("primary", "motorway_link"):
+        width = 0.00006
+    elif path_subtype == "trunk":
+        width = 0.000075
+    elif path_subtype == "motorway":
+        width = 0.0001
+    else:
+        print(f"Unclassified path width for type {path_subtype}! Using Default Value!")
+        width = 0.000025
+    return width
 
 def generate_object_list(gdf,default_height,height_scale):
     """
@@ -289,92 +314,44 @@ def generate_object_list(gdf,default_height,height_scale):
 
     for idx, row in gdf.iterrows():
         #We will have a geometry in the the first place [0] and the height in the second place [1]
-        object = []
+        geo_object = []
         #Check if we can process the object. Points and other stuff are not implemented (yet).
-        if not (isinstance(row['geometry'], shapely.geometry.Polygon) or isinstance(row['geometry'], shapely.geometry.LineString)):
+        if not isinstance(row['geometry'], (shapely.geometry.Polygon, shapely.geometry.LineString)):
             print(f"Object of Type {idx[0]} with id {idx[1]} is not implemented (yet).")
             continue
 
         #Get the geometry out of the raw data
-        object.append(row['geometry'])
+        geo_object.append(row['geometry'])
         # If Object is a string convert to polygon
-        if isinstance(object[0], shapely.geometry.LineString):
+        if isinstance(geo_object[0], shapely.geometry.LineString):
             #manual definition of path width depending on type
             if hasattr(row,"highway") and not pandas.isna(row.highway):
-                if row.highway == "motorway":
-                    object[0] = shapely.buffer(object[0], 0.0001)
-                elif row.highway == "trunk":
-                    object[0] = shapely.buffer(object[0], 0.000075)
-                elif row.highway == "primary":
-                    object[0] = shapely.buffer(object[0], 0.00006)
-                elif row.highway == "secondary":
-                    object[0] = shapely.buffer(object[0], 0.000055)
-                elif row.highway == "tertiary":
-                    object[0] = shapely.buffer(object[0], 0.000045)
-                elif row.highway == "residential":
-                    object[0] = shapely.buffer(object[0], 0.000025)
-                elif row.highway == "motorway_link":
-                    object[0] = shapely.buffer(object[0], 0.00006)
-                elif row.highway == "trunk_link":
-                    object[0] = shapely.buffer(object[0], 0.00005)
-                elif row.highway == "primary_link":
-                    object[0] = shapely.buffer(object[0], 0.00005)
-                elif row.highway == "secondary_link":
-                    object[0] = shapely.buffer(object[0], 0.00004)
-                elif row.highway == "tertiary_link":
-                    object[0] = shapely.buffer(object[0], 0.00004)
-                elif row.highway == "living_street":
-                    object[0] = shapely.buffer(object[0], 0.000025)
-                elif row.highway == "service":
-                    object[0] = shapely.buffer(object[0], 0.000025)
-                elif row.highway == "pedestrian":
-                    object[0] = shapely.buffer(object[0], 0.000025)
-                elif row.highway == "track":
-                    object[0] = shapely.buffer(object[0], 0.000025)
-                elif row.highway == "footway":
-                    object[0] = shapely.buffer(object[0], 0.000025)
-                elif row.highway == "bridleway":
-                    object[0] = shapely.buffer(object[0], 0.000025)
-                elif row.highway == "path":
-                    object[0] = shapely.buffer(object[0], 0.000025)
-                elif row.highway == "sidewalk":
-                    object[0] = shapely.buffer(object[0], 0.000025)
-                elif row.highway == "crossing":
-                    object[0] = shapely.buffer(object[0], 0.000025)
-                elif row.highway == "traffic_island":
-                    object[0] = shapely.buffer(object[0], 0.000025)
-                elif row.highway == "cycleway":
-                    object[0] = shapely.buffer(object[0], 0.000025)
-                else:
-                    print(f"unclassified path width for type {row.highway}")
-                    object[0] = shapely.buffer(object[0], 0.000025)
+                geo_object[0] = shapely.buffer(geo_object[0], get_path_width(row.highway))
             elif hasattr(row,"man_made") and not pandas.isna(row.man_made):
-                if row.man_made == "pier":
-                    object[0] = shapely.buffer(object[0], 0.000004)
-            elif hasattr(row,"railway") and not pandas.isna(row.railway):
-                if not (row.tunnel == "yes" or row.railway == 'razed'):
-                    object[0] = shapely.buffer(object[0], 0.00002)
+                geo_object[0] = shapely.buffer(geo_object[0], get_path_width(row.man_made))
+            elif hasattr(row,"railway") and not pandas.isna(row.railway) and not (row.tunnel == "yes" or row.railway == 'razed'):
+                geo_object[0] = shapely.buffer(geo_object[0], 0.00002)
             else:
-                object[0] = shapely.buffer(object[0], 0.000025)
+                geo_object[0] = shapely.buffer(geo_object[0], 0.000025)
 
         #Get Object height
         height = get_object_height(row, default_height)
         if height > 0:
             object_height = height * 1000 * height_scale
             if object_height > 0.5:
-                object.append(object_height) #height in meter * 1000 = height in millimeter; height in millimeter gets then scaled down
-                object.append(1) #height offset = 1 since it is on top of the base
+                geo_object.append(object_height) #height in meter * 1000 = height in millimeter; height in millimeter gets then scaled down
+                geo_object.append(1) #height offset = 1 since it is on top of the base
             else:
-                object.append(object_height + 1) #height in meter * 1000 = height in millimeter; height in millimeter gets then scaled down
-                object.append(0) #height offset = 0 since it needs to be embedded in base, the embedded millimeter is added to the object height
+                geo_object.append(object_height + 1) #height in meter * 1000 = height in millimeter; height in millimeter gets then scaled down
+                geo_object.append(0) #height offset = 0 since it needs to be embedded in base, the embedded millimeter is added to the object height
         else:
-            object.append(1) #It is 1 mm deep embedded in base
-            object.append(0) #height offset = 0 since it needs to be embedded in base
+            geo_object.append(1) #It is 1 mm deep embedded in base
+            geo_object.append(0) #height offset = 0 since it needs to be embedded in base
 
-        if object[0].area > 0:
-            object_list.append(object)
-    return(object_list)
-        
+        if geo_object[0].area > 0:
+            object_list.append(geo_object)
+    return object_list
+
 def preprocess_objects_meta(object_list,bbox,target_size,base_scaling_factor, scale=True):
     base_size = target_size*base_scaling_factor
     
