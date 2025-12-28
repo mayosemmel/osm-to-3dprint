@@ -359,15 +359,16 @@ def preprocess_objects_meta(object_list,bbox,target_size,base_scaling_factor, sc
 
     #Call Preprocessing Function in Multiprocessing
     print("starting preprocessing with", multiprocessing.cpu_count(), "CPU Cores")
-    with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
-        meta_object_list = p.map(preprocess_objects,object_list)
-        p.close()
-        p.join()
+    #Be careful if reenabling this! It seems to trigger some kind of race condition where SOMETIMES a logic error in the end-result happens.
+    #with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
+    #    meta_object_list = p.map(preprocess_objects,object_list)
+    #    p.close()
+    #    p.join()
     ###################################
     #This is only for debugging without multiprocessing
-    #meta_object_list = []
-    #for object in object_list:
-    #    meta_object_list.append(preprocess_objects(object))
+    meta_object_list = []
+    for single_object in object_list:
+        meta_object_list.append(preprocess_objects(single_object))
     ######################################
     preprocessed_objects = []
     for meta_object in meta_object_list:

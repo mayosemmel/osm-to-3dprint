@@ -143,8 +143,6 @@ def main():
         print("generation of base plate completed")
 
     #Generation of Buildings
-    for building in object_list_buildings:
-        print(list(building[0].exterior.coords))
     if buildings and len(object_list_buildings) > 0:
         preprocessed_buildings = f.preprocess_objects_meta(object_list_buildings,bbox,target_size,base_scaling_factor,scale=False)
         faces = f.prepare_3d_mesh(
