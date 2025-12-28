@@ -378,6 +378,15 @@ def preprocess_objects_meta(object_list,bbox,target_size,base_scaling_factor, sc
     print("preprocessing done")
     return preprocessed_objects
 
+def order_points_clockwise(geometry_list):
+    """check if points of polygon are clockwise ordered"""
+    clockwise_geometries = []
+    for geometry in geometry_list:
+        if shapely.algorithms.cga.signed_area(geometry.exterior) > 0:
+            geometry = shapely.Polygon(reversed(geometry.exterior.coords))
+        clockwise_geometries.append(geometry)
+    return clockwise_geometries
+
 def preprocess_objects(geo_object):
     """Preprocess geometries to have the correct type, no holes, vertices in clockwise order, scaling, ...)"""
     print('.', end='')
@@ -389,11 +398,9 @@ def preprocess_objects(geo_object):
         #nothing to cut
         geometry_list = [geo_object[0]]
 
-    for geometry in geometry_list:
-        #check if points of polygon are clockwise ordered
-        if shapely.algorithms.cga.signed_area(geometry.exterior) > 0:
-            geometry = shapely.Polygon(reversed(geometry.exterior.coords))
+    clockwise_list = order_points_clockwise(geometry_list)
 
+    for geometry in clockwise_list:
         #in case the geometry is invalid we try to fix it
         if not shapely.is_valid(geometry):
             valid_geom = shapely.make_valid(geometry)
