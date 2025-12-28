@@ -446,37 +446,60 @@ def make_geometries_valid(invalid_objects):
             valid_objects.append(geo_object)
     return valid_objects
 
-def prepare_3d_mesh(preprocessed_objects, target_size, base_scaling_factor, base_thickness, base_generation=True, object_generation=False):
-    """Generation of 3D Mesh out of 2D Shapes with height"""
-    vertices = []
-    faces = []
+def create_base_geometry(target_size, base_scaling_factor):
+    """Generate the base geometry as shapely polygon"""
     base_size = target_size * base_scaling_factor
+
     base_geometry = shapely.Polygon((
-            (0, 0),
-            (0, base_size),
-            (base_size, base_size),
-            (base_size, 0)))
+        (0, 0),
+        (0, base_size),
+        (base_size, base_size),
+        (base_size, 0)))
+    return base_geometry
+
+def create_inner_base_geometry(target_size, base_scaling_factor):
+    """Generate the inner base geometry as shapely polygon"""
     offset_inner_base = (target_size * (base_scaling_factor - 1)) / 2
     inner_base_geometry = shapely.Polygon((
         (offset_inner_base, offset_inner_base),
         (offset_inner_base, target_size + offset_inner_base),
         (target_size + offset_inner_base, target_size + offset_inner_base),
         (target_size + offset_inner_base, offset_inner_base)))
+    return inner_base_geometry
+
+def generate_base(target_size, base_scaling_factor, base_thickness):
+    """Generate solid base"""
+    faces = []
+
+    base_geometry = create_base_geometry(target_size, base_scaling_factor)
+    inner_base_geometry = create_inner_base_geometry(target_size, base_scaling_factor)
+
+    vertices = create_vertices_list(base_geometry.exterior.coords, 0, base_thickness, height_offset=0)
+    faces.extend(create_faces(vertices))
+
+    # Frame around Base.
+    base_frame = shapely.difference(base_geometry, inner_base_geometry)
+    # This line is to cut the base diagonal to have a polygon without holes.
+    line = shapely.LineString([[0,0], [target_size * base_scaling_factor,target_size * base_scaling_factor]])
+    base_frame_objects = []
+    for base_frame_part in shapely.ops.split(base_frame, line).geoms:
+        base_frame_objects.append([base_frame_part,1,0])
+    for geo_object in base_frame_objects:
+        exterior_coords = list(geo_object[0].exterior.coords)
+        vertices = create_vertices_list(exterior_coords, base_thickness, geo_object[1], geo_object[2])
+        faces.extend(create_faces(vertices))
+
+    return faces
+
+def prepare_3d_mesh(preprocessed_objects, target_size, base_scaling_factor, base_thickness, base_generation=True, object_generation=False):
+    """Generation of 3D Mesh out of 2D Shapes with height"""
+    vertices = []
+    faces = []
+    inner_base_geometry = create_inner_base_geometry(target_size, base_scaling_factor)
 
     if base_generation:
         # Generate solid base
-        vertices = create_vertices_list(base_geometry.exterior.coords, 0, base_thickness, height_offset=0)
-        faces.extend(create_faces(vertices))
-
-        base_frame = shapely.difference(base_geometry,inner_base_geometry)
-        line = shapely.LineString([[0,0], [target_size * base_scaling_factor,target_size * base_scaling_factor]])
-        base_frame_objects = []
-        for base_frame_part in shapely.ops.split(base_frame, line).geoms:
-            base_frame_objects.append([base_frame_part,1,0])
-        for geo_object in base_frame_objects:
-            exterior_coords = list(geo_object[0].exterior.coords)
-            vertices = create_vertices_list(exterior_coords, base_thickness, geo_object[1], geo_object[2])
-            faces.extend(create_faces(vertices))
+        faces.extend(generate_base(target_size, base_scaling_factor, base_thickness))
 
     if object_generation:
         #in case the geometry is invalid we try to fix it
