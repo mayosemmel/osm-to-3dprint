@@ -491,11 +491,30 @@ def generate_base(target_size, base_scaling_factor, base_thickness):
 
     return faces
 
-def prepare_3d_mesh(preprocessed_objects, target_size, base_scaling_factor, base_thickness, base_generation=True, object_generation=False):
-    """Generation of 3D Mesh out of 2D Shapes with height"""
-    vertices = []
+def remove_overhangs_over_base(target_size, base_scaling_factor, base_thickness, geo_object):
+    """Remove any overhangs over the base plate. This is required since some objects start within the bbox but end outside of it.
+    If this is the case we have object which are a lot to big and are not printable.
+    After Cleanup the Faces of the final object are added to the whole list"""
     faces = []
     inner_base_geometry = create_inner_base_geometry(target_size, base_scaling_factor)
+    height = geo_object[1]
+    height_offset = geo_object[2]
+    if shapely.intersects(inner_base_geometry, geo_object[0]):
+        intersection = shapely.intersection(inner_base_geometry, geo_object[0])
+        if isinstance(intersection, shapely.geometry.MultiPolygon):
+            for polygon in list(intersection.geoms):
+                exterior_coords = list(polygon.exterior.coords)
+                vertices = create_vertices_list(exterior_coords, base_thickness, height, height_offset)
+                faces.extend(create_faces(vertices))
+        elif isinstance(intersection, shapely.geometry.Polygon):
+            exterior_coords = list(intersection.exterior.coords)
+            vertices = create_vertices_list(exterior_coords, base_thickness, height, height_offset)
+            faces.extend(create_faces(vertices))
+    return faces
+
+def prepare_3d_mesh(preprocessed_objects, target_size, base_scaling_factor, base_thickness, base_generation=True, object_generation=False):
+    """Generation of 3D Mesh out of 2D Shapes with height"""
+    faces = []
 
     if base_generation:
         # Generate solid base
@@ -505,29 +524,8 @@ def prepare_3d_mesh(preprocessed_objects, target_size, base_scaling_factor, base
         #in case the geometry is invalid we try to fix it
         preprocessed_valid_objects = make_geometries_valid(preprocessed_objects)
 
-        counter = 0
         for geo_object in preprocessed_valid_objects:
-            print(f"processing object {counter} of {len(preprocessed_valid_objects)}")
-            exterior_coords = list(geo_object[0].exterior.coords)
-            height = geo_object[1]
-            height_offset = geo_object[2]
-            #Remove any overhangs over the base plate. This is required since some objects start within the bbox but end outside of it.
-            #If this is the case we have object which are a lot to big and are not printable.
-            #After Cleanup the Faces of the final object are added to the whole list
-            if shapely.intersects(inner_base_geometry, geo_object[0]):
-                intersection = shapely.intersection(inner_base_geometry, geo_object[0])
-                if isinstance(intersection, shapely.geometry.MultiPolygon):
-                    for polygon in list(intersection.geoms):
-                        exterior_coords = list(polygon.exterior.coords)
-                        vertices= create_vertices_list(exterior_coords, base_thickness, height, height_offset)
-                        faces.extend(create_faces(vertices))
-                elif isinstance(intersection, shapely.geometry.Polygon):
-                    exterior_coords = list(intersection.exterior.coords)
-                    vertices = create_vertices_list(exterior_coords, base_thickness, height, height_offset)
-                    faces.extend(create_faces(vertices))
-            else:
-                continue
-            counter += 1
+            faces.extend(remove_overhangs_over_base(target_size, base_scaling_factor, base_thickness, geo_object))
 
     faces = np.array(faces)
 
