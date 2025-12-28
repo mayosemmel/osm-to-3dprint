@@ -423,6 +423,22 @@ def create_faces(vertices):
 
     return faces
 
+def make_geometries_valid(invalid_objects):
+    """in case the geometry is invalid we try to fix it"""
+    valid_objects = []
+    for geo_object in invalid_objects:
+        if not shapely.is_valid(geo_object[0]):
+            valid_geom = shapely.make_valid(geo_object[0])
+            if isinstance(valid_geom, shapely.geometry.MultiPolygon):
+                for geom in valid_geom.geoms:
+                    if isinstance(geom,shapely.geometry.Polygon):
+                        valid_objects.append([geom,geo_object[1],geo_object[2]])
+            elif isinstance(valid_geom,shapely.geometry.Polygon):
+                valid_objects.append([valid_geom,geo_object[1],geo_object[2]])
+        else:
+            valid_objects.append(geo_object)
+    return valid_objects
+
 def prepare_3d_mesh(preprocessed_objects, target_size, base_scaling_factor, base_thickness, base_generation=True, object_generation=False):
     """Generation of 3D Mesh out of 2D Shapes with height"""
     vertices = []
@@ -457,18 +473,7 @@ def prepare_3d_mesh(preprocessed_objects, target_size, base_scaling_factor, base
 
     if object_generation:
         #in case the geometry is invalid we try to fix it
-        preprocessed_valid_objects = []
-        for geo_object in preprocessed_objects:
-            if not shapely.is_valid(geo_object[0]):
-                valid_geom = shapely.make_valid(geo_object[0])
-                if isinstance(valid_geom, shapely.geometry.MultiPolygon):
-                    for geom in valid_geom.geoms:
-                        if isinstance(geom,shapely.geometry.Polygon):
-                            preprocessed_valid_objects.append([geom,geo_object[1],geo_object[2]])
-                elif isinstance(valid_geom,shapely.geometry.Polygon):
-                    preprocessed_valid_objects.append([valid_geom,geo_object[1],geo_object[2]])
-            else:
-                preprocessed_valid_objects.append(geo_object)
+        preprocessed_valid_objects = make_geometries_valid(preprocessed_objects)
 
         counter = 0
         for geo_object in preprocessed_valid_objects:
